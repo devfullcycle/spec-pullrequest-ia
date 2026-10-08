@@ -460,6 +460,8 @@ O worker é a mesma imagem da API, publicada como um serviço separado do Cloud 
 | Tolerância de pagamento | 7 dias |
 | Profundidade de pastas | 50 níveis |
 
+A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são lidos de variáveis de ambiente. Os valores da tabela são os padrões de produção, e o ambiente local pode reduzi-los para testar.
+
 **CORS**
 
 - **API:** só a origem do frontend.
@@ -473,6 +475,10 @@ O worker é a mesma imagem da API, publicada como um serviço separado do Cloud 
 | `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | Par de chaves RS256 (segredo) |
 | `GCS_BUCKET` | api | Nome do bucket privado |
 | `TASKS_QUEUE`, `WORKER_URL` | api | Fila do Cloud Tasks e endereço do worker |
+| `QUEUE_DRIVER` | api | `cloud-tasks` em staging e produção, `local` no desenvolvimento (chamada HTTP direta ao worker) |
+| `STORAGE_EMULATOR_HOST` | api | Endereço do emulador de storage, só no desenvolvimento |
+| `TRASH_RETENTION_DAYS`, `PENDING_UPLOAD_TTL_HOURS` | api | Padrões de 30 dias e 24 horas |
+| `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | api | Padrões de 15 minutos e 30 dias |
 | `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | api | Credenciais do gateway (segredo) |
 | `MAIL_API_KEY`, `MAIL_FROM` | api | Serviço de e-mail (segredo) |
 | `WEB_ORIGIN` | api | Origem do frontend, para CORS e links de e-mail |
