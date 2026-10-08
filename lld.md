@@ -1,0 +1,491 @@
+# LLD — Gerenciador de Arquivos (estilo Google Drive)
+
+2026-10-08 · Luiz Carlos · Documentos de origem: [product-brief.md](./product-brief.md) e [hld.md](./hld.md)
+
+Este documento detalha o MVP web no nível necessário para começar a codificar: estrutura do código, esquema do banco, contrato da API, estados e regras, tarefas do worker e configuração. A arquitetura e os motivos das decisões estruturais estão no HLD.
+
+## 1. Estrutura do código
+
+O código fica num monorepo com pnpm workspaces, com dois projetos de deploy independente e um pacote de tipos compartilhados.
+
+```text
+/
+├── apps/
+│   ├── web/                  # Next.js (App Router)
+│   │   ├── app/
+│   │   │   ├── (auth)/       # login, cadastro, redefinição de senha
+│   │   │   ├── (drive)/      # pastas, lixeira, busca, planos
+│   │   │   └── s/[token]/    # página pública do link compartilhado
+│   │   ├── lib/api/          # cliente da API, usado só no servidor
+│   │   └── lib/session/      # leitura e renovação dos cookies de token
+│   └── api/                  # NestJS (API e worker, mesma imagem)
+│       ├── prisma/           # schema.prisma e migrações
+│       └── src/
+│           ├── modules/
+│           │   ├── auth/
+│           │   ├── items/
+│           │   ├── uploads/
+│           │   ├── sharing/
+│           │   ├── quota/
+│           │   ├── billing/
+│           │   └── worker/   # endpoints internos das tarefas
+│           ├── infra/        # storage, tasks, mail, payment gateway
+│           └── common/       # guards, filtros de erro, rate limit
+└── packages/
+    └── shared/               # tipos do contrato da API e códigos de erro
+```
+
+| Decisão | Escolha |
+| --- | --- |
+| ORM e migrações | Prisma. As consultas recursivas de pastas usam SQL puro (`$queryRaw`). |
+| Validação de entrada | class-validator nos DTOs |
+| Documentação da API | OpenAPI gerado pelo NestJS (Swagger) |
+| Autenticação | `@nestjs/jwt` com um guard próprio, sem Passport. Argon2 para o hash da senha. |
+| Storage e fila | SDKs oficiais do Google Cloud (Storage e Cloud Tasks) |
+| Testes | Jest na API e Playwright para os fluxos de ponta a ponta |
+
+**Camadas de cada módulo da API**
+
+- **Controller:** rotas HTTP, DTOs e validação.
+- **Service:** regras de negócio e transações.
+- **Repository:** acesso ao banco.
+
+Um módulo só chama outro pelo service público dele, nunca pelas tabelas. As integrações externas (storage, fila, e-mail, gateway) ficam atrás de interfaces em `infra/`, para que a troca de fornecedor fique restrita a um arquivo.
+
+**Chamadas do frontend:** o Next.js chama a API sempre no servidor (Server Components, Server Actions e Route Handlers). O navegador só fala direto com o Cloud Storage, para upload e download.
+
+## 2. Esquema do banco
+
+**Convenções:** nomes em inglês e `snake_case`, chaves primárias em UUID v7 gerado pela aplicação, tamanhos em `BIGINT` (bytes), datas em `TIMESTAMPTZ` (UTC) e valores monetários em centavos.
+
+```mermaid
+erDiagram
+    plans ||--o{ users : "plano atual"
+    users ||--o{ refresh_tokens : possui
+    users ||--o{ email_tokens : possui
+    users ||--o{ items : possui
+    items ||--o{ items : "pai de"
+    items ||--o{ share_links : "compartilhado por"
+    users ||--o{ subscriptions : assina
+    plans ||--o{ subscriptions : "plano de"
+    subscriptions ||--o{ payment_events : recebe
+```
+
+### users
+
+| Coluna | Tipo | Observação |
+| --- | --- | --- |
+| `id` | `UUID` | Chave primária |
+| `email` | `CITEXT` | Único |
+| `password_hash` | `TEXT` | Argon2id |
+| `email_verified_at` | `TIMESTAMPTZ` | Nulo até a verificação |
+| `plan_id` | `UUID` | Referência a `plans`. Começa no plano gratuito. |
+| `used_bytes` | `BIGINT` | Padrão 0. Restrição `used_bytes >= 0`. |
+| `created_at`, `updated_at` | `TIMESTAMPTZ` | |
+
+### refresh_tokens
+
+| Coluna | Tipo | Observação |
+| --- | --- | --- |
+| `id` | `UUID` | Chave primária |
+| `user_id` | `UUID` | Referência a `users`, com exclusão em cascata |
+| `token_hash` | `TEXT` | SHA-256 do token. Único. |
+| `expires_at` | `TIMESTAMPTZ` | 30 dias após a emissão |
+| `rotated_at` | `TIMESTAMPTZ` | Preenchido quando o token é trocado |
+| `replaced_by_id` | `UUID` | O token que o substituiu |
+| `created_at` | `TIMESTAMPTZ` | |
+
+### email_tokens
+
+| Coluna | Tipo | Observação |
+| --- | --- | --- |
+| `id` | `UUID` | Chave primária |
+| `user_id` | `UUID` | Referência a `users`, com exclusão em cascata |
+| `type` | `TEXT` | `verify_email` ou `reset_password` |
+| `token_hash` | `TEXT` | Único |
+| `expires_at` | `TIMESTAMPTZ` | 24 horas para verificação, 1 hora para redefinição |
+| `used_at` | `TIMESTAMPTZ` | Uso único |
+
+### items
+
+| Coluna | Tipo | Observação |
+| --- | --- | --- |
+| `id` | `UUID` | Chave primária |
+| `owner_id` | `UUID` | Referência a `users`, com exclusão em cascata |
+| `parent_id` | `UUID` | Referência a `items`. Nulo só na pasta raiz. |
+| `type` | `TEXT` | `file` ou `folder` |
+| `name` | `VARCHAR(255)` | Sem `/` nem caracteres de controle. Nomes duplicados são permitidos. |
+| `status` | `TEXT` | `pending`, `active` ou `trashed` |
+| `size_bytes` | `BIGINT` | 0 para pastas |
+| `mime_type` | `TEXT` | Nulo para pastas |
+| `object_key` | `TEXT` | Chave aleatória no bucket. Nulo para pastas. Único. |
+| `upload_session_uri` | `TEXT` | Sessão retomável do Cloud Storage, enquanto `pending` |
+| `thumbnail_key` | `TEXT` | Nulo se não houver miniatura |
+| `trashed_at` | `TIMESTAMPTZ` | Preenchido ao enviar para a lixeira |
+| `created_at`, `updated_at` | `TIMESTAMPTZ` | |
+
+**Índices de `items`**
+
+- `(parent_id)` filtrado por `status = 'active'`, para listar uma pasta.
+- `(owner_id, status, trashed_at)`, para a lixeira e o expurgo.
+- `(status, created_at)` filtrado por `status = 'pending'`, para a limpeza de uploads.
+- Trigramas (`pg_trgm`, GIN) em `name`, para a busca.
+- Único em `(owner_id)` filtrado por `parent_id IS NULL`, para garantir uma raiz por usuário.
+
+### share_links
+
+| Coluna | Tipo | Observação |
+| --- | --- | --- |
+| `id` | `UUID` | Chave primária |
+| `item_id` | `UUID` | Referência a `items`, com exclusão em cascata |
+| `owner_id` | `UUID` | Referência a `users` |
+| `token_hash` | `TEXT` | SHA-256 do token do link. Único. |
+| `password_hash` | `TEXT` | Argon2id. Nulo se o link não tiver senha. |
+| `expires_at` | `TIMESTAMPTZ` | Nulo se o link não expirar |
+| `created_at` | `TIMESTAMPTZ` | |
+
+Como só o hash é guardado, a URL do link é exibida uma única vez, na criação. Depois disso, a listagem mostra a data, a expiração e se há senha, mas não a URL.
+
+### plans
+
+| Coluna | Tipo | Observação |
+| --- | --- | --- |
+| `id` | `UUID` | Chave primária |
+| `code` | `TEXT` | `free`, `plan_100gb`, `plan_1tb` ou `plan_2tb`. Único. |
+| `storage_bytes` | `BIGINT` | Limite da cota |
+| `price_monthly_cents`, `price_yearly_cents` | `INTEGER` | Valores a definir (questão em aberto do brief) |
+| `active` | `BOOLEAN` | Plano disponível para contratação |
+
+### subscriptions
+
+| Coluna | Tipo | Observação |
+| --- | --- | --- |
+| `id` | `UUID` | Chave primária |
+| `user_id` | `UUID` | Referência a `users` |
+| `plan_id` | `UUID` | Referência a `plans` |
+| `status` | `TEXT` | `pending`, `active`, `past_due`, `canceled` ou `expired` |
+| `billing_cycle` | `TEXT` | `monthly` ou `yearly` |
+| `payment_method` | `TEXT` | `card` ou `pix` |
+| `current_period_start`, `current_period_end` | `TIMESTAMPTZ` | |
+| `past_due_since` | `TIMESTAMPTZ` | Início da tolerância de 7 dias |
+| `gateway_subscription_id` | `TEXT` | Referência no gateway |
+| `created_at`, `updated_at` | `TIMESTAMPTZ` | |
+
+Índice único em `(user_id)` filtrado por `status IN ('active', 'past_due', 'canceled')`: cada usuário tem no máximo uma assinatura vigente.
+
+### payment_events
+
+| Coluna | Tipo | Observação |
+| --- | --- | --- |
+| `id` | `UUID` | Chave primária |
+| `gateway_event_id` | `TEXT` | Único. Garante que webhooks reenviados sejam ignorados. |
+| `subscription_id` | `UUID` | Nulo se o evento não puder ser associado |
+| `type` | `TEXT` | Tipo do evento no gateway |
+| `payload` | `JSONB` | Conteúdo recebido |
+| `received_at`, `processed_at` | `TIMESTAMPTZ` | |
+
+### rate_limits
+
+| Coluna | Tipo | Observação |
+| --- | --- | --- |
+| `key` | `TEXT` | Chave primária, por exemplo `login:account:<id>` |
+| `window_start` | `TIMESTAMPTZ` | Início da janela |
+| `count` | `INTEGER` | Contador da janela |
+
+Os contadores ficam no PostgreSQL porque as instâncias do Cloud Run não compartilham memória. Uma troca futura por Redis fica restrita ao módulo `common/rate-limit`.
+
+## 3. Contrato da API
+
+### 3.1 Convenções
+
+| Convenção | Escolha |
+| --- | --- |
+| Prefixo e versão | `/v1` |
+| Formato | JSON, com campos em `camelCase` |
+| Autenticação | `Authorization: Bearer <token de acesso>` |
+| Erros | RFC 9457 (`application/problem+json`), com um campo `code` estável |
+| Paginação | Por cursor: `?limit=50&cursor=...`, com máximo de 200. A resposta traz `nextCursor`. |
+| Ordenação de listagens | Pastas primeiro, depois por nome |
+| Idempotência | Cabeçalho `Idempotency-Key` em `POST /uploads` e `POST /billing/checkout` |
+
+**Códigos de erro**
+
+| HTTP | `code` | Quando |
+| --- | --- | --- |
+| 400 | `validation_error` | Entrada inválida |
+| 400 | `invalid_move` | Mover uma pasta para dentro dela mesma ou de uma descendente |
+| 400 | `max_depth_exceeded` | Mais de 50 níveis de pastas |
+| 401 | `unauthenticated` | Token ausente, inválido ou expirado |
+| 401 | `invalid_credentials` | E-mail ou senha incorretos |
+| 403 | `email_not_verified` | Login antes da verificação do e-mail |
+| 403 | `link_password_required` | Link com senha, sem token de acesso ao link |
+| 404 | `not_found` | Item inexistente ou de outro dono |
+| 409 | `upload_size_mismatch` | Tamanho real diferente do declarado |
+| 410 | `link_expired` | Link expirado ou revogado |
+| 413 | `file_too_large` | Arquivo acima de 5 GB |
+| 413 | `quota_exceeded` | Sem espaço no plano |
+| 429 | `rate_limited` | Limite de requisições atingido |
+
+### 3.2 Autenticação e conta
+
+| Método e rota | Entrada | Saída |
+| --- | --- | --- |
+| `POST /auth/register` | `email`, `password` | 201. Envia o e-mail de verificação. |
+| `POST /auth/verify-email` | `token` | 204 |
+| `POST /auth/login` | `email`, `password` | `accessToken`, `refreshToken`, `expiresIn` |
+| `POST /auth/refresh` | `refreshToken` | Novo par de tokens |
+| `POST /auth/logout` | `refreshToken` | 204 |
+| `POST /auth/logout-all` | | 204. Revoga todos os tokens de renovação. |
+| `POST /auth/forgot-password` | `email` | 204, mesmo se o e-mail não existir |
+| `POST /auth/reset-password` | `token`, `password` | 204. Revoga todos os tokens de renovação. |
+| `GET /me` | | `id`, `email`, `plan`, `usedBytes`, `quotaBytes`, `readOnly` |
+| `PATCH /me/password` | `currentPassword`, `newPassword` | 204. Revoga os outros tokens de renovação. |
+
+### 3.3 Itens, lixeira e busca
+
+| Método e rota | Entrada | Saída |
+| --- | --- | --- |
+| `GET /items/{id}` | | O item e a trilha de pastas até a raiz |
+| `GET /items/{id}/children` | `limit`, `cursor` | Lista de itens ativos da pasta |
+| `POST /folders` | `name`, `parentId` | 201, a pasta criada |
+| `PATCH /items/{id}` | `name` e/ou `parentId` | O item atualizado |
+| `DELETE /items/{id}` | | 204. Envia para a lixeira. |
+| `GET /trash` | `limit`, `cursor` | Itens enviados diretamente à lixeira |
+| `POST /items/{id}/restore` | | O item restaurado |
+| `DELETE /trash/{id}` | | 202. Exclusão definitiva, em segundo plano. |
+| `DELETE /trash` | | 202. Esvazia a lixeira, em segundo plano. |
+| `GET /search` | `q` (mínimo de 2 caracteres), `limit`, `cursor` | Itens ativos cujo nome contém `q` |
+
+O id `root` é aceito como atalho para a pasta raiz do usuário.
+
+### 3.4 Upload e download
+
+| Método e rota | Entrada | Saída |
+| --- | --- | --- |
+| `POST /uploads` | `name`, `sizeBytes`, `mimeType`, `parentId` | 201: `itemId`, `uploadUrl`, `expiresAt` |
+| `GET /uploads/{itemId}` | | `itemId`, `uploadUrl`, `expiresAt`, para retomar um upload `pending` |
+| `POST /uploads/{itemId}/complete` | | O item, já `active` |
+| `DELETE /uploads/{itemId}` | | 204. Cancela e devolve o espaço. |
+| `GET /items/{id}/download-url` | `disposition` (`attachment` ou `inline`) | `url`, `expiresAt` |
+| `GET /items/{id}/thumbnail-url` | | `url`, `expiresAt`, ou 404 se não houver miniatura |
+
+### 3.5 Compartilhamento
+
+| Método e rota | Entrada | Saída |
+| --- | --- | --- |
+| `POST /items/{id}/share-links` | `expiresAt` e `password`, opcionais | 201: o link e o `token`, exibido só nesta resposta |
+| `GET /items/{id}/share-links` | | Links do item, sem o token |
+| `DELETE /share-links/{id}` | | 204 |
+| `POST /public/links/{token}/access` | `password`, se o link exigir | Dados do item raiz do link e um `linkAccessToken` de 15 minutos |
+| `GET /public/links/{token}/children` | `itemId`, `limit`, `cursor` | Itens ativos abaixo do item do link |
+| `GET /public/links/{token}/items/{id}/download-url` | | `url`, `expiresAt` |
+
+As rotas `/public` não exigem conta. Quando o link tem senha, as chamadas seguintes carregam o `linkAccessToken` no cabeçalho `Authorization`.
+
+### 3.6 Cobrança
+
+| Método e rota | Entrada | Saída |
+| --- | --- | --- |
+| `GET /plans` | | Planos ativos, com espaço e preços |
+| `POST /billing/checkout` | `planCode`, `billingCycle`, `paymentMethod` | `checkoutUrl` |
+| `GET /billing/subscription` | | A assinatura vigente, ou `null` |
+| `POST /billing/subscription/cancel` | | A assinatura, com status `canceled` |
+| `POST /webhooks/payments` | Evento do gateway | 200. Valida a assinatura do gateway, sem JWT. |
+
+## 4. Estados e regras
+
+### 4.1 Item
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: POST /uploads
+    [*] --> active: POST /folders
+    pending --> active: upload concluído e conferido
+    pending --> [*]: cancelado ou pendente há mais de 24 horas
+    active --> trashed: enviar à lixeira
+    trashed --> active: restaurar
+    trashed --> [*]: expurgo após 30 dias ou exclusão definitiva
+```
+
+- **Enviar uma pasta à lixeira** marca só a pasta. Os descendentes continuam `active`, mas ficam inacessíveis.
+- **Consequência para busca e links públicos:** como os descendentes não são marcados, essas consultas precisam conferir se algum ancestral está na lixeira. A conferência é feita com uma consulta recursiva sobre a página de resultados (até 200 itens, até 50 níveis).
+- **Restaurar** devolve o item à pasta de origem. Se ela não existir mais ou estiver na lixeira, o item volta para a raiz.
+- **Expurgo de uma pasta** remove todos os descendentes, de baixo para cima.
+- **Mover:** a API sobe pelos ancestrais do destino e rejeita o pedido se encontrar o próprio item (`invalid_move`) ou se a profundidade passar de 50 níveis.
+
+### 4.2 Cota
+
+A reserva é um único comando, sem bloqueio explícito:
+
+```sql
+UPDATE users u
+SET used_bytes = u.used_bytes + $size
+FROM plans p
+WHERE u.id = $user_id
+  AND p.id = u.plan_id
+  AND u.used_bytes + $size <= p.storage_bytes;
+```
+
+Se nenhuma linha for afetada, a API responde `quota_exceeded`. A reserva e a criação do item `pending` ocorrem na mesma transação.
+
+| Evento | Efeito em `used_bytes` |
+| --- | --- |
+| Iniciar upload | Soma o tamanho declarado |
+| Cancelar upload ou limpeza de pendente | Subtrai |
+| Tamanho real diferente do declarado | Subtrai, e o objeto é apagado |
+| Enviar à lixeira ou restaurar | Nenhum |
+| Expurgo ou exclusão definitiva | Subtrai, depois de o objeto ser apagado do storage |
+
+Pastas e miniaturas não contam para a cota. Uma rotina diária recalcula `used_bytes` pela soma dos itens e registra as divergências.
+
+**Conta somente leitura:** é um estado calculado (`used_bytes > storage_bytes`), não gravado. Ele bloqueia apenas o upload. Baixar, excluir, criar pastas e restaurar da lixeira continuam funcionando.
+
+### 4.3 Assinatura
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: checkout criado
+    pending --> active: webhook de pagamento aprovado
+    pending --> [*]: checkout abandonado
+    active --> past_due: falha de cobrança
+    past_due --> active: pagamento aprovado
+    past_due --> expired: 7 dias sem pagamento
+    active --> canceled: usuário cancela
+    canceled --> expired: fim do período pago
+    expired --> [*]
+```
+
+- **Ativação:** só o webhook de pagamento aprovado muda `users.plan_id`. O retorno do navegador após o checkout não altera nada.
+- **Cancelamento:** o plano continua até `current_period_end`, sem reembolso proporcional.
+- **Expiração:** `users.plan_id` volta ao plano gratuito. Nenhum arquivo é apagado, e a conta fica somente leitura se estiver acima da cota.
+- **Webhook:** a API grava o evento em `payment_events` antes de processar. Se `gateway_event_id` já existir, o evento é ignorado e a resposta é 200.
+
+### 4.4 Permissão
+
+- **Dono:** toda consulta filtra por `owner_id`. Não há acesso a item de outro usuário no MVP.
+- **Item inexistente ou de outro dono:** a resposta é 404 nos dois casos.
+- **Link público:** dá leitura ao item do link e aos descendentes ativos dele. A cada chamada, a API confere que o item pedido está abaixo do item do link.
+- **Item na lixeira:** os links para ele, ou para algo abaixo dele, respondem `link_expired` até a restauração.
+
+### 4.5 Tokens
+
+- **Token de acesso:** JWT com `sub` (id do usuário) e `exp`, assinado com RS256 e validado só pela assinatura.
+- **Token de renovação:** valor opaco de 256 bits, guardado só como hash. Cada renovação emite um novo par e marca o token antigo como trocado.
+- **Reuso de um token já trocado:** todos os tokens de renovação do usuário são revogados, por indicar possível roubo. Para não derrubar duas abas que renovam ao mesmo tempo, o token antigo continua aceito por 10 segundos depois da troca.
+- **Cookies no Next.js:** os dois tokens ficam em cookies `HttpOnly`, `Secure` e `SameSite=Lax`. Quando o token de acesso expira, o Next.js chama `/auth/refresh` no servidor e regrava os cookies.
+
+### 4.6 Upload em chunks
+
+O navegador envia cada arquivo em chunks sequenciais para a sessão de upload retomável do Cloud Storage. A API só participa no início e na conclusão.
+
+| Parâmetro | Valor |
+| --- | --- |
+| Tamanho do chunk | 8 MiB (o Cloud Storage exige múltiplos de 256 KiB, exceto no último chunk) |
+| Arquivos menores que 8 MiB | Enviados num único `PUT` |
+| Chunks de um mesmo arquivo | Em sequência, um por vez |
+| Arquivos simultâneos | Até 3 |
+| Tentativas por chunk | 5, com espera crescente de 1 a 30 segundos |
+
+**Envio**
+
+1. O navegador chama `POST /uploads` e recebe `itemId` e `uploadUrl`.
+2. Para cada chunk, o navegador faz um `PUT` em `uploadUrl` com o cabeçalho `Content-Range: bytes <início>-<fim>/<total>`.
+3. O storage responde `308` enquanto faltam bytes, com o cabeçalho `Range` indicando o que já foi recebido. O navegador calcula o próximo chunk a partir desse valor, e não do que ele acha que enviou.
+4. No último chunk, o storage responde `200` ou `201`. O navegador chama `POST /uploads/{itemId}/complete`.
+
+**Retomada**
+
+1. Depois de uma falha de rede, o navegador faz um `PUT` vazio com `Content-Range: bytes */<total>`.
+2. O storage responde `308` com o cabeçalho `Range`. Sem esse cabeçalho, nenhum byte foi recebido.
+3. O navegador continua a partir do byte seguinte.
+
+**Depois de fechar a aba**
+
+- O navegador guarda no `localStorage` só o `itemId` e uma impressão do arquivo (nome, tamanho e data de modificação). A `uploadUrl` não é guardada, porque quem a tem consegue gravar na sessão.
+- Ao voltar, a interface lista os uploads incompletos e pede que o usuário selecione o arquivo de novo, já que o navegador não mantém acesso ao arquivo local.
+- Se a impressão bater, o navegador chama `GET /uploads/{itemId}` para obter a `uploadUrl` e retoma pelo passo de retomada.
+
+**Erros**
+
+| Situação | Tratamento |
+| --- | --- |
+| `5xx` ou falha de rede | Consultar o progresso e repetir o chunk, até 5 vezes |
+| `404` ou `410` na sessão | A sessão expirou. O navegador chama `DELETE /uploads/{itemId}` e recomeça do zero. |
+| `upload_size_mismatch` na conclusão | A API apaga o objeto e devolve o espaço. O navegador mostra o erro. |
+| Usuário cancela | O navegador chama `DELETE /uploads/{itemId}` |
+
+**Pontos de implementação a validar**
+
+- **Origem na criação da sessão:** a API precisa informar a origem do frontend ao criar a sessão retomável, para que o navegador possa usá-la.
+- **CORS do bucket:** a configuração precisa expor o cabeçalho `Range` na resposta, para o navegador conseguir lê-lo.
+
+Esses dois pontos vêm do meu conhecimento da API do Cloud Storage e não foram testados neste projeto. Vale confirmá-los na documentação atual antes de implementar.
+
+## 5. Tarefas do worker
+
+O worker é a mesma imagem da API, publicada como um serviço separado do Cloud Run. Ele expõe endpoints HTTP internos, que só aceitam chamadas autenticadas (OIDC) do Cloud Tasks e do Cloud Scheduler. Todas as tarefas são idempotentes.
+
+| Tarefa | Disparo | Em caso de falha |
+| --- | --- | --- |
+| Gerar miniatura de imagem | Cloud Tasks, na conclusão do upload | 3 tentativas. Depois disso, o arquivo fica sem miniatura. |
+| Limpar uploads `pending` há mais de 24 horas | Cloud Scheduler, a cada hora | Tenta de novo na próxima execução |
+| Expurgar itens há mais de 30 dias na lixeira | Cloud Scheduler, diário | Tenta de novo na próxima execução |
+| Apagar objetos no Cloud Storage | Cloud Tasks, uma tarefa por lote | Novas tentativas com espera crescente |
+| Gerar cobrança Pix | Cloud Scheduler, diário, 5 dias antes do vencimento | Nova tentativa e alerta |
+| Expirar assinaturas `past_due` há mais de 7 dias e `canceled` com período encerrado | Cloud Scheduler, diário | Tenta de novo na próxima execução |
+| Reconciliar `used_bytes` | Cloud Scheduler, diário | Só registra a divergência |
+| Limpar tokens, links e contadores expirados | Cloud Scheduler, diário | Tenta de novo na próxima execução |
+
+**Ordem do expurgo:** primeiro o objeto e a miniatura são apagados do Cloud Storage, e só depois a linha sai do banco e o espaço volta à cota. Na ordem inversa, uma falha no meio deixaria objetos órfãos, gerando custo sem registro.
+
+**Miniaturas:** são geradas só para imagens de até 50 MB, com 320 px no lado maior, em WebP, e gravadas no mesmo bucket sob o prefixo `thumbnails/`.
+
+## 6. Configuração e segurança
+
+**Limites e prazos**
+
+| Item | Valor |
+| --- | --- |
+| Token de acesso | 15 minutos |
+| Token de renovação | 30 dias, com rotação a cada uso |
+| Token de acesso a link com senha | 15 minutos |
+| Senha | Mínimo de 10 caracteres, com hash Argon2id |
+| Tentativas de login | 5 por conta e 20 por IP a cada 15 minutos |
+| Tentativas de senha de link público | 10 por link a cada 15 minutos |
+| Limite geral da API | 300 requisições por minuto por usuário |
+| Tamanho máximo por arquivo | 5 GB |
+| URL assinada de download | 5 minutos |
+| Sessão de upload retomável | 24 horas |
+| Retenção da lixeira | 30 dias |
+| Tolerância de pagamento | 7 dias |
+| Profundidade de pastas | 50 níveis |
+
+**CORS**
+
+- **API:** só a origem do frontend.
+- **Bucket:** só a origem do frontend, para os métodos de upload e download.
+
+**Variáveis de ambiente**
+
+| Variável | Projeto | Conteúdo |
+| --- | --- | --- |
+| `DATABASE_URL` | api | Conexão com o Cloud SQL (segredo) |
+| `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | Par de chaves RS256 (segredo) |
+| `GCS_BUCKET` | api | Nome do bucket privado |
+| `TASKS_QUEUE`, `WORKER_URL` | api | Fila do Cloud Tasks e endereço do worker |
+| `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | api | Credenciais do gateway (segredo) |
+| `MAIL_API_KEY`, `MAIL_FROM` | api | Serviço de e-mail (segredo) |
+| `WEB_ORIGIN` | api | Origem do frontend, para CORS e links de e-mail |
+| `API_URL` | web | Endereço interno da API |
+| `COOKIE_DOMAIN` | web | Domínio dos cookies de token |
+
+Os valores marcados como segredo vêm do Secret Manager e não ficam em arquivos versionados.
+
+## Questões em aberto
+
+- [ ] Exclusão de conta pelo próprio usuário: está fora do MVP, mas a LGPD dá ao titular o direito de pedir a eliminação dos dados. Sem a função, o pedido é atendido manualmente.
+- [ ] Download de pasta inteira em ZIP: fica fora do MVP, e o usuário baixa arquivo por arquivo.
+- [ ] Operações em lote (mover ou excluir vários itens): o frontend faz uma chamada por item.
+- [ ] Direito de arrependimento de 7 dias em compras online: precisa de validação jurídica e pode exigir reembolso.
+- [ ] URL do link compartilhado visível só na criação: confirmar se esse comportamento é aceitável, ou guardar o token de forma recuperável.
+- [ ] Preços dos planos, gateway de pagamento e serviço de e-mail, que continuam em aberto no brief e no HLD.
