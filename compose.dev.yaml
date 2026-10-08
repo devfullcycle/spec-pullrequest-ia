@@ -3,14 +3,20 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile.dev
+    # Faz o contêiner parado encerrar na hora no `down`.
+    init: true
     ports:
       - "3000:3000"
     volumes:
       - ./apps/web:/app
-      # Dependências e build ficam no contêiner, isolados dos da máquina.
-      - web_node_modules:/app/node_modules
-      - web_next:/app/.next
 
-volumes:
-  web_node_modules:
-  web_next:
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.dev
+    init: true
+    ports:
+      # Na máquina a API fica na 3001; entre contêineres, em http://api:3000.
+      - "3001:3000"
+    volumes:
+      - ./apps/api:/app

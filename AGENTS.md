@@ -12,17 +12,22 @@ Em `docs/` estão os documentos que definem o produto, a arquitetura e os detalh
 
 Tudo roda dentro dos contêineres do Docker Compose: instalação de dependências, servidor de desenvolvimento, testes, lint, compilação do TypeScript e qualquer outro comando do projeto. **Nunca rode `pnpm`, `node` ou `npx` direto na máquina.**
 
-O ambiente de desenvolvimento usa o `compose.dev.yaml`, na raiz. O contêiner sobe e fica parado, sem instalar dependências nem iniciar a aplicação. Os comandos são executados nele com `docker compose exec`.
+O ambiente de desenvolvimento usa o `compose.dev.yaml`, na raiz. Cada contêiner instala as dependências ao subir (`pnpm install`) e depois fica parado, sem iniciar a aplicação. A `node_modules` é criada na pasta do projeto, montada da máquina, e não num volume do Docker. Os comandos são executados nele com `docker compose exec`.
 
 **Iniciar o projeto**
 
 ```bash
 docker compose -f compose.dev.yaml up -d --build
-docker compose -f compose.dev.yaml exec web pnpm install
 docker compose -f compose.dev.yaml exec web pnpm dev --hostname 0.0.0.0
+docker compose -f compose.dev.yaml exec api pnpm start:dev
 ```
 
-A aplicação web responde em `http://localhost:3000`. O `--hostname 0.0.0.0` é necessário para que ela aceite conexões de fora do contêiner.
+Na primeira subida, a instalação das dependências leva algum tempo. Acompanhe com `docker compose -f compose.dev.yaml logs -f` e só inicie as aplicações depois do `Done` do pnpm.
+
+Os dois últimos comandos ficam presos ao terminal, então rode cada um num terminal próprio.
+
+- **Web:** responde em `http://localhost:3000`. O `--hostname 0.0.0.0` é necessário para que ela aceite conexões de fora do contêiner.
+- **API:** responde em `http://localhost:3001` na máquina. Entre contêineres, o endereço é `http://api:3000`.
 
 **Derrubar o projeto**
 
@@ -30,7 +35,7 @@ A aplicação web responde em `http://localhost:3000`. O `--hostname 0.0.0.0` é
 docker compose -f compose.dev.yaml down
 ```
 
-Para apagar também os volumes (dependências instaladas e cache de build), acrescente `-v`.
+As dependências instaladas continuam na pasta do projeto e são reaproveitadas na próxima subida.
 
 **Executar comandos dentro do contêiner**
 
@@ -46,7 +51,7 @@ docker compose -f compose.dev.yaml exec web pnpm exec tsc --noEmit
 docker compose -f compose.dev.yaml exec web bash
 ```
 
-O `web` é o nome do serviço no Compose. Para outro serviço, troque pelo nome dele.
+O `web` é o nome do serviço no Compose. Para a API, troque por `api`.
 
 ## Rede no Docker
 
