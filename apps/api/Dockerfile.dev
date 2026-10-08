@@ -1,0 +1,21 @@
+# Imagem de desenvolvimento: o código entra por volume (ver compose.dev.yaml na raiz).
+FROM node:24-slim
+
+# O modo watch do Nest usa o `ps` para encerrar o processo anterior a cada recarga.
+RUN apt-get update && apt-get install -y --no-install-recommends procps \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g pnpm@11.6.0
+
+WORKDIR /app
+
+USER node
+
+# Sem isto, o pnpm cria o store dentro do código montado.
+RUN pnpm config set store-dir /home/node/.pnpm-store --location=global
+
+EXPOSE 3000
+
+# Instala as dependências na subida e depois só mantém o contêiner de pé;
+# os comandos são rodados com `docker compose exec`.
+CMD ["sh", "-c", "pnpm install && exec tail -f /dev/null"]
