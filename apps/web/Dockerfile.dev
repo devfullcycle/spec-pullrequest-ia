@@ -1,0 +1,18 @@
+# Imagem de desenvolvimento: o código entra por volume (ver compose.dev.yaml na raiz).
+FROM node:24-slim
+
+RUN npm install -g pnpm@11.6.0
+
+WORKDIR /app
+
+# Os volumes nomeados herdam o dono destes diretórios na primeira subida.
+RUN mkdir -p /app/node_modules /app/.next && chown -R node:node /app
+
+USER node
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+EXPOSE 3000
+
+# Só mantém o contêiner de pé; os comandos são rodados com `docker compose exec`.
+CMD ["tail", "-f", "/dev/null"]

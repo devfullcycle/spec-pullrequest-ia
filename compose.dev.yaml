@@ -1,0 +1,16 @@
+services:
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app
+      # Dependências e build ficam no contêiner, isolados dos da máquina.
+      - web_node_modules:/app/node_modules
+      - web_next:/app/.next
+
+volumes:
+  web_node_modules:
+  web_next:
