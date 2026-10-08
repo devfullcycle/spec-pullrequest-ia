@@ -1,21 +1,12 @@
-# CLAUDE.md
+# AGENTS.md
 
 ## Documentos
 
-Em `docs/` estão os documentos que definem o produto, a arquitetura e os detalhes de implementação.
+Em `docs/` estão os documentos que definem o produto, a arquitetura e os detalhes de implementação. Abaixo estão os principais do projeto:
 
 1. `docs/product-brief.md`: o quê e para quem. Escopo do MVP, o que fica fora, planos e métricas.
-2. `docs/hld.md`: arquitetura, fluxos principais, ambientes e as decisões com as alternativas descartadas.
-3. `docs/lld.md`: estrutura do monorepo, esquema do banco, contrato da API, estados, regras de cota, tarefas do worker e upload em chunks.
-
-Regras para editar os documentos:
-
-- **A decisão e o motivo ficam no HLD, a mecânica fica no LLD.** Nomes de tabelas, endpoints, variáveis de ambiente e valores de limites pertencem ao LLD.
-- **Os três precisam continuar consistentes.** Uma mudança de escopo ou de stack costuma tocar mais de um documento. Avise o usuário antes de editar um documento diferente do que ele pediu.
-- **Toda decisão nova entra na tabela de decisões do HLD (seção 7),** com a alternativa descartada e o motivo.
-- **O que não foi decidido vai para "Questões em aberto",** e não é preenchido com um valor inventado. Os números de usuários e volume do HLD são hipóteses de dimensionamento e estão marcados assim.
-- Os documentos estão em português. Os identificadores de código (tabelas, colunas, rotas, variáveis) estão em inglês.
-- Os diagramas são blocos mermaid.
+2. `docs/hld.md`: High-level design, documento de arquitetura de alto nível. Aqui ficam as decisões de arquitetura, os fluxos principais e a visão geral do sistema.
+3. `docs/lld.md`: Low-level design, documento de arquitetura de baixo nível com detalhes de implementação. Aqui ficam os esquemas de banco, contratos de API, estados, regras de cota, tarefas do worker e upload em chunks.
 
 ## Rede no Docker
 
