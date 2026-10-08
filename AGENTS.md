@@ -8,6 +8,46 @@ Em `docs/` estão os documentos que definem o produto, a arquitetura e os detalh
 2. `docs/hld.md`: High-level design, documento de arquitetura de alto nível. Aqui ficam as decisões de arquitetura, os fluxos principais e a visão geral do sistema.
 3. `docs/lld.md`: Low-level design, documento de arquitetura de baixo nível com detalhes de implementação. Aqui ficam os esquemas de banco, contratos de API, estados, regras de cota, tarefas do worker e upload em chunks.
 
+## Execução no Docker
+
+Tudo roda dentro dos contêineres do Docker Compose: instalação de dependências, servidor de desenvolvimento, testes, lint, compilação do TypeScript e qualquer outro comando do projeto. **Nunca rode `pnpm`, `node` ou `npx` direto na máquina.**
+
+O ambiente de desenvolvimento usa o `compose.dev.yaml`, na raiz. O contêiner sobe e fica parado, sem instalar dependências nem iniciar a aplicação. Os comandos são executados nele com `docker compose exec`.
+
+**Iniciar o projeto**
+
+```bash
+docker compose -f compose.dev.yaml up -d --build
+docker compose -f compose.dev.yaml exec web pnpm install
+docker compose -f compose.dev.yaml exec web pnpm dev --hostname 0.0.0.0
+```
+
+A aplicação web responde em `http://localhost:3000`. O `--hostname 0.0.0.0` é necessário para que ela aceite conexões de fora do contêiner.
+
+**Derrubar o projeto**
+
+```bash
+docker compose -f compose.dev.yaml down
+```
+
+Para apagar também os volumes (dependências instaladas e cache de build), acrescente `-v`.
+
+**Executar comandos dentro do contêiner**
+
+```bash
+docker compose -f compose.dev.yaml exec web <comando>
+```
+
+Exemplos:
+
+```bash
+docker compose -f compose.dev.yaml exec web pnpm lint
+docker compose -f compose.dev.yaml exec web pnpm exec tsc --noEmit
+docker compose -f compose.dev.yaml exec web bash
+```
+
+O `web` é o nome do serviço no Compose. Para outro serviço, troque pelo nome dele.
+
 ## Rede no Docker
 
 O projeto roda inteiro em contêineres do Docker Compose. Ao configurar a conexão entre serviços (banco, storage, e-mail, worker), **use sempre o nome do serviço do Compose como host**, nunca `localhost` nem `127.0.0.1`.
@@ -39,6 +79,8 @@ Uma mudança no código só está concluída quando **todos** os itens abaixo pa
 Se algum item falhar, a tarefa não está pronta. Corrija a causa antes de declarar a conclusão.
 
 Os comandos acima são os planejados para o monorepo com pnpm. Confira os scripts reais no `package.json` de cada projeto antes de rodá-los.
+
+Rode todos eles dentro do contêiner do projeto, como descrito em [Execução no Docker](#execução-no-docker).
 
 ## Convenções de Git
 
