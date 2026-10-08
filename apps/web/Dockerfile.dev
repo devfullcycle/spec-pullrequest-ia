@@ -10,6 +10,9 @@ RUN mkdir -p /app/node_modules /app/.next && chown -R node:node /app
 
 USER node
 
+# Sem isto, o pnpm cria o store dentro do código montado por volume.
+RUN pnpm config set store-dir /home/node/.pnpm-store --location=global
+
 ENV NEXT_TELEMETRY_DISABLED=1
 
 EXPOSE 3000
