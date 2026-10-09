@@ -9,6 +9,9 @@ services:
       - "3000:3000"
     volumes:
       - ./apps/web:/app
+    environment:
+      # A web chama a API sempre pelo servidor, pelo nome do serviço.
+      API_URL: http://api:3000
     healthcheck:
       # O arquivo é criado quando a instalação das dependências termina.
       test: ["CMD", "test", "-f", "/tmp/web-ready"]
@@ -44,6 +47,30 @@ services:
       start_period: 10m
       # Durante a preparação, confere a cada segundo, para o `up --wait` não esperar à toa.
       start_interval: 1s
+
+  playwright:
+    # Os navegadores vêm na imagem. A versão é a mesma do `@playwright/test` do
+    # apps/web/package.json: ao atualizar uma, atualize a outra.
+    image: mcr.microsoft.com/playwright:v1.64.0-noble
+    init: true
+    # O Chromium usa memória compartilhada, e os 64 MB padrão do Docker não bastam para a suíte em paralelo.
+    ipc: host
+    # O mesmo usuário do contêiner `web`, para os relatórios não nascerem como root na máquina.
+    user: "1000:1000"
+    working_dir: /app
+    volumes:
+      - ./apps/web:/app
+    environment:
+      WEB_URL: http://web:3000
+      MAILPIT_URL: http://mailpit:8025
+    depends_on:
+      # Usa a `node_modules` que o contêiner `web` instala.
+      web:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    # Fica parado, como `web` e `api`. Os testes são rodados com `docker compose exec`.
+    command: ["tail", "-f", "/dev/null"]
 
   postgres:
     image: postgres:17

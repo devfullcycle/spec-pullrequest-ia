@@ -9,3 +9,5 @@ coverage
 Dockerfile*
 .dockerignore
 README.md
+test-results
+playwright-report

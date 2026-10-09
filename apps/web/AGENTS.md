@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Estado atual
 
-O projeto ainda é o esqueleto do `create-next-app`: um layout e uma página de exemplo em `app/`. As rotas, `components/`, `lib/` e o `proxy.ts` **ainda não existem**, e não há executor de testes instalado. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
+A base está pronta: os tokens do design system no `app/globals.css`, os componentes que a autenticação usa (`components/ui/` e `components/auth/`), o cliente da API (`lib/api/`), a vitrine (`app/vitrine/`) e os testes no navegador (`e2e/`). As telas, `lib/session`, `lib/dal` e o `proxy.ts` **ainda não existem**, e a página inicial é provisória. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
 
 ## Comandos
 
@@ -27,7 +27,23 @@ docker compose -f compose.dev.yaml exec web <comando>
 | `pnpm exec tsc --noEmit` | Checagem de tipos |
 | `pnpm build` | Build de produção, em modo `standalone` |
 
-**Ainda não há suíte de testes.** O `package.json` não tem script `test`, e o Playwright previsto no LLD não foi instalado. Até lá, a definição de pronto da web é lint, checagem de tipos, `pnpm build` e a validação visual. A tarefa que trouxer o primeiro teste cria o script e o registra nesta tabela.
+A web tem uma suíte só, a dos testes no navegador, que roda no contêiner `playwright`, e não no `web`:
+
+```bash
+docker compose -f compose.dev.yaml exec playwright npx playwright test
+```
+
+| Comando | O que faz |
+| --- | --- |
+| `npx playwright test` | Todos os testes de `e2e/` |
+| `npx playwright test e2e/smoke.spec.ts` | Um arquivo de teste só |
+| `npx playwright test -g "nome do teste"` | Um teste pelo nome |
+
+- **A web e a API têm de estar no ar.** Os testes falam com a aplicação real em `http://web:3000`. Antes de rodá-los, suba o `pnpm dev --hostname 0.0.0.0` no contêiner `web` e o `pnpm start:dev` no `api`.
+- **O relatório** fica em `apps/web/playwright-report/`, e o trace de um teste que falhou, em `apps/web/test-results/`. Os dois ficam fora do Git.
+- **A versão do Playwright é fixa.** A do `@playwright/test`, no `package.json`, e a da imagem do serviço `playwright`, no `compose.dev.yaml`, têm de ser a mesma. Atualize as duas juntas.
+
+A definição de pronto da web é a suíte no navegador, o lint, a checagem de tipos, o `pnpm build` e, em mudanças de interface, a validação visual.
 
 **Rode o `pnpm build` antes de concluir.** Com Cache Components, os erros de pré-renderização (dado lido fora de `<Suspense>` e sem cache, `Date.now()` durante a renderização) só aparecem no overlay de desenvolvimento e no build. O lint e o `tsc` não os pegam.
 
@@ -38,6 +54,8 @@ docker compose -f compose.dev.yaml exec web <comando>
 - **Proxy:** o arquivo que roda antes de cada rota é o `proxy.ts`, e não mais o `middleware.ts`.
 - **Tipos de rota:** os componentes de rota usam os tipos globais `PageProps<'/rota'>` e `LayoutProps<'/rota'>`, gerados pelo Next.js. `params` e `searchParams` são promises.
 - **Tailwind v4:** não existe `tailwind.config`. Os tokens são variáveis do `@theme` em `app/globals.css`, e o CSS passa pelo loader `@tailwindcss/turbopack`, configurado no `next.config.ts`.
+- **Classe fora dos tokens falha em silêncio.** As classes de cor, texto, raio e sombra são só as da seção "Tokens no Tailwind" do `docs/design-system.md`. Uma classe como `bg-zinc-50` ou `text-sm` não gera CSS nenhum, e o build não avisa.
+- **Ícones:** o `LucideProvider` do layout raiz já aplica o traço do design system, e o Lucide esconde do leitor de tela o ícone sem rótulo. O componente passa só o tamanho e a cor.
 - **Imports:** o alias `@/` aponta para a raiz do projeto (`@/components/ui/button`).
 - **Lint sem formatador:** o projeto não tem Prettier. O `pnpm lint` é a única checagem de estilo.
 
@@ -86,10 +104,25 @@ A exceção conhecida é o upload: o navegador envia os chunks direto ao Cloud S
 - **Toda Server Action confere a Sessão de novo.** Uma Server Action é um endpoint público. Esconder o botão na interface não protege nada.
 - **Uma busca por requisição.** Funções de leitura usadas por mais de um componente na mesma página são envolvidas em `React.cache`, que evita a chamada repetida dentro da mesma requisição. Isso não é cache entre requisições e não tem custo de invalidação.
 
+## Componentes e vitrine
+
+- **Onde ficam e como se chamam:** a seção "Componentes" do fluxo de trabalho com o Figma, no `docs/design-system.md`, define as pastas e o nome dos arquivos.
+- **Estados por classe, e não por prop.** Hover, foco, pressionado e desabilitado saem das variantes do Tailwind e dos utilitários de estado da seção "Tokens no Tailwind" do `docs/design-system.md`. Um componente só recebe prop para o estado que o CSS não enxerga, como `loading` e `error`.
+- **Link ou botão pelo `href`.** `button-primary` e `text-link` viram um `Link` do Next.js quando recebem `href`, e um `<button>` quando não recebem. O `button-primary` mantém o `type` nativo e envia o formulário em que está; o `text-link` sem `href` é `type="button"`.
+- **A vitrine** (`app/vitrine/`) mostra os componentes fora de qualquer fluxo: `/vitrine` traz os primitivos em cada estado, `/vitrine/auth-card` traz o cartão de autenticação montado, e `/vitrine/api` chama a API pelo cliente de `lib/api`. Ela serve à validação visual e aos testes no navegador, e só existe no servidor de desenvolvimento: no build de produção, as rotas dela respondem 404. Ao criar um componente ou um estado, acrescente-o à vitrine.
+
+## Testes no navegador
+
+- **O que entra:** o que só existe na web, pela porta que o Usuário usa. As regras do contrato são provadas pelos testes de ponta a ponta da API, e não aqui.
+- **Sem outro nível de teste:** a web não tem executor de testes de unidade. Enquanto for assim, o cliente de `lib/api` é provado pela rota `/vitrine/api`, e os auxiliares de `e2e/support/`, por um teste próprio na mesma suíte.
+- **Onde ficam:** em `e2e/`, com o sufixo `.spec.ts`. Os auxiliares ficam em `e2e/support/`.
+- **E-mails:** `e2e/support/mailpit.ts` lê os e-mails pelo Mailpit. `uniqueEmail()` cria um destinatário que nenhum outro teste usa, `waitForMailTo()` espera o e-mail chegar e `extractLink()` tira dele o link de um caminho. Nenhum teste apaga a caixa do Mailpit, que também serve ao desenvolvimento.
+- **Seletores:** pelo papel e pelo nome acessível (`getByRole`, `getByLabel`), que é como o Usuário acha o elemento. `data-testid` fica para o que não tem papel nem rótulo.
+
 ## Formulários e textos
 
 - **Formulários:** Server Actions com `useActionState`. A validação é feita com zod na Server Action, e o resultado volta como estado do formulário. A validação no navegador é só conforto.
-- **Erros da API:** a API responde com um `code` estável. A web traduz o `code` em mensagem num único mapa, e nenhum componente mostra a mensagem crua da API.
+- **Erros da API:** a API responde com um `code` estável. O cliente de `lib/api` devolve o erro esperado como valor (`{ ok: false, error }`), e não como exceção. A web traduz o `code` em mensagem num único mapa, o de `lib/api/error-messages.ts`, e nenhum componente mostra a mensagem crua da API.
 - **Textos:** só em português, escritos nos componentes, sem biblioteca de tradução.
 
 ## Cache

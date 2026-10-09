@@ -1,26 +1,161 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Tokens do design system. A fonte da verdade são as tabelas do docs/design-system.md:
+ * mude lá primeiro, e depois aqui e no Figma.
+ *
+ * As cores do @theme são as do tema claro. O tema escuro as sobrescreve logo abaixo.
+ */
+@theme {
+  /*
+   * As escalas padrão de cor, texto, raio e sombra do Tailwind são apagadas: só as classes
+   * dos tokens existem. Uma classe como `bg-zinc-50` ou `text-sm` não gera CSS nenhum.
+   */
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+
+  --color-primary: #0066cc;
+  --color-primary-fill: #0066cc;
+  --color-primary-focus: #0071e3;
+  --color-primary-soft: #e6f0fa;
+  --color-on-fill: #ffffff;
+
+  --color-canvas: #ffffff;
+  --color-surface: #f5f5f7;
+  --color-surface-raised: #ffffff;
+  --color-surface-hover: rgba(0, 0, 0, 0.04);
+  --color-fill-disabled: #e8e8ed;
+  --color-surface-black: #000000;
+  --color-scrim: rgba(0, 0, 0, 0.4);
+
+  --color-ink: #1d1d1f;
+  --color-ink-muted: #6e6e73;
+  --color-ink-disabled: #a1a1a6;
+
+  --color-hairline: #e0e0e0;
+  --color-hairline-strong: #86868b;
+
+  --color-danger: #d70015;
+  --color-danger-fill: #d70015;
+  --color-danger-soft: #fdecee;
+  --color-warning: #b25000;
+  --color-warning-soft: #fff4e5;
+  --color-success: #1d7a34;
+  --color-success-soft: #e8f5ec;
+
+  /*
+   * {typography.display} tem 28px abaixo de `sm` e 32px a partir dele (ver o fim do arquivo).
+   * O tracking dos títulos é proporcional (-0.64px em 32px), para acompanhar o tamanho.
+   */
+  --text-display: 1.75rem;
+  --text-display--line-height: 1.15;
+  --text-display--letter-spacing: -0.02em;
+  --text-display--font-weight: 600;
+
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.3;
+  --text-title--letter-spacing: -0.01em;
+  --text-title--font-weight: 600;
+
+  --text-body: 1rem;
+  --text-body--line-height: 1.5;
+  --text-body--font-weight: 400;
+
+  --text-body-strong: 1rem;
+  --text-body-strong--line-height: 1.5;
+  --text-body-strong--font-weight: 600;
+
+  --text-ui: 0.875rem;
+  --text-ui--line-height: 1.43;
+  --text-ui--font-weight: 400;
+
+  --text-ui-strong: 0.875rem;
+  --text-ui-strong--line-height: 1.43;
+  --text-ui-strong--font-weight: 600;
+
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.33;
+  --text-caption--font-weight: 400;
+
+  --text-mono: 0.8125rem;
+  --text-mono--line-height: 1.4;
+  --text-mono--font-weight: 400;
+
+  /* {rounded.none} e {rounded.full} são as classes `rounded-none` e `rounded-full` do Tailwind. */
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+
+  --shadow-overlay: 0 5px 30px 0 rgba(0, 0, 0, 0.22);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  @variant dark {
+    --color-primary: #2997ff;
+    --color-primary-fill: #0071e3;
+    --color-primary-focus: #2997ff;
+    --color-primary-soft: #1f354c;
+
+    --color-canvas: #1d1d1f;
+    --color-surface: #272729;
+    --color-surface-raised: #2a2a2c;
+    --color-surface-hover: rgba(255, 255, 255, 0.06);
+    --color-fill-disabled: #3a3a3c;
+    --color-scrim: rgba(0, 0, 0, 0.6);
+
+    --color-ink: #f5f5f7;
+    --color-ink-muted: #a1a1a6;
+    --color-ink-disabled: #6e6e73;
+
+    --color-hairline: #38383a;
+
+    --color-danger: #ff453a;
+    --color-danger-soft: #3b1f1f;
+    --color-warning: #ff9f0a;
+    --color-warning-soft: #3a2a12;
+    --color-success: #30d158;
+    --color-success-soft: #1c3323;
+  }
+
+  @variant sm {
+    --text-display: 2rem;
+  }
+}
+
+/* Estado de foco do design system: obrigatório em todo elemento interativo. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--color-primary-focus);
+    outline-offset: 2px;
+  }
+}
+
+/* O mesmo anel, para a caixa que envolve um campo: acende quando o campo de dentro tem o foco. */
+@utility focus-ring-within {
+  &:has(input:focus-visible) {
+    outline: 2px solid var(--color-primary-focus);
+    outline-offset: 2px;
+  }
+}
+
+/* Hover de um controle preenchido: {colors.surface-hover} por cima do preenchimento. */
+@utility hover-overlay {
+  &:hover {
+    background-image: linear-gradient(
+      var(--color-surface-hover),
+      var(--color-surface-hover)
+    );
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
 }
