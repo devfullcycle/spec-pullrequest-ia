@@ -1,8 +1,6 @@
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsEmailLinkToken } from './email-link-token.decorator.js';
 
 export class VerifyEmailDto {
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(512)
+  @IsEmailLinkToken()
   token: string;
 }

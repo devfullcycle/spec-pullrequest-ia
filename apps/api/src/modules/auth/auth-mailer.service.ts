@@ -54,6 +54,35 @@ export class AuthMailerService {
     });
   }
 
+  /** `ttlSeconds` é a validade com que o token foi emitido, para o texto dizer a mesma. */
+  sendPasswordReset(to: string, token: string, ttlSeconds: number): void {
+    const link = `${this.app.webOrigin}/redefinir-senha?token=${encodeURIComponent(token)}`;
+    this.dispatch({
+      to,
+      subject: 'Redefina sua senha',
+      text: paragraphs(
+        'Olá!',
+        'Para definir uma senha nova, abra o link abaixo:',
+        link,
+        `O link vale por ${formatDuration(ttlSeconds)} e só pode ser usado uma vez.`,
+        'Se você não pediu a redefinição, ignore este e-mail. Sua senha continua a mesma.',
+      ),
+    });
+  }
+
+  sendPasswordChanged(to: string): void {
+    this.dispatch({
+      to,
+      subject: 'Sua senha foi alterada',
+      text: paragraphs(
+        'Olá!',
+        'A senha da sua conta foi alterada, e todas as sessões abertas foram encerradas.',
+        `Para entrar com a senha nova: ${this.app.webOrigin}/entrar`,
+        `Se não foi você, redefina a senha agora: ${this.app.webOrigin}/esqueci-minha-senha`,
+      ),
+    });
+  }
+
   private dispatch(message: MailMessage): void {
     this.mail.send(message).catch((error: unknown) => {
       // O log não leva o destinatário, que é um dado pessoal.

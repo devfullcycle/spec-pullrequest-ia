@@ -3,21 +3,27 @@
 import { useActionState } from "react";
 import { Banner } from "@/components/ui/banner";
 import { ButtonPrimary } from "@/components/ui/button-primary";
-import { EmailField } from "../../email-field";
-import { requestVerificationLink } from "../../actions";
-import type { RequestLinkFormState } from "../../form-state";
+import { EmailField } from "./email-field";
+import type { RequestLinkFormState } from "./form-state";
 
 const INITIAL_STATE: RequestLinkFormState = {};
 
-export function RequestLinkForm() {
-  const [state, action, pending] = useActionState(
-    requestVerificationLink,
-    INITIAL_STATE,
-  );
+type RequestLinkFormProps = {
+  /** A Server Action que pede o link para o e-mail informado. */
+  action: (
+    previous: RequestLinkFormState,
+    formData: FormData,
+  ) => Promise<RequestLinkFormState>;
+  submitLabel: string;
+};
+
+/** O formulário das telas que pedem um link por e-mail: só o campo de e-mail e o botão. */
+export function RequestLinkForm({ action, submitLabel }: RequestLinkFormProps) {
+  const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
 
   return (
     // A validação é da Server Action: a do navegador mostraria balões fora do design.
-    <form action={action} noValidate className="flex flex-col gap-6">
+    <form action={formAction} noValidate className="flex flex-col gap-6">
       {state.formError && (
         <Banner variant="error" layout="narrow">
           {state.formError}
@@ -30,7 +36,7 @@ export function RequestLinkForm() {
         />
       </div>
       <ButtonPrimary type="submit" fullWidth loading={pending}>
-        Enviar novo link
+        {submitLabel}
       </ButtonPrimary>
     </form>
   );

@@ -2,10 +2,12 @@ import "server-only";
 import { apiRequest } from "@/lib/api/client";
 import type {
   ApiResult,
+  ForgotPasswordInput,
   LoginInput,
   LogoutInput,
   RegisterInput,
   ResendVerificationInput,
+  ResetPasswordInput,
   TokenPair,
   VerifyEmailInput,
 } from "@/lib/api/types";
@@ -35,4 +37,16 @@ export function login(input: LoginInput): Promise<ApiResult<TokenPair>> {
 
 export function logout(input: LogoutInput): Promise<ApiResult<void>> {
   return apiRequest("/auth/logout", { method: "POST", body: input });
+}
+
+export function forgotPassword(
+  input: ForgotPasswordInput,
+): Promise<ApiResult<void>> {
+  return apiRequest("/auth/forgot-password", { method: "POST", body: input });
+}
+
+export function resetPassword(
+  input: ResetPasswordInput,
+): Promise<ApiResult<void>> {
+  return apiRequest("/auth/reset-password", { method: "POST", body: input });
 }

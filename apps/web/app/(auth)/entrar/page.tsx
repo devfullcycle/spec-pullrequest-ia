@@ -6,6 +6,7 @@ import { TextLink } from "@/components/ui/text-link";
 import {
   EMAIL_VERIFIED_NOTICE,
   NOTICE_PARAM,
+  PASSWORD_RESET_NOTICE,
   SESSION_EXPIRED_NOTICE,
 } from "@/lib/session/login-path";
 import { RETURN_PARAM } from "@/lib/session/return-path";
@@ -23,6 +24,13 @@ async function Notice({ searchParams }: Props) {
     return (
       <Banner variant="success" layout="narrow">
         E-mail verificado. Agora você já pode entrar.
+      </Banner>
+    );
+  }
+  if (notice === PASSWORD_RESET_NOTICE) {
+    return (
+      <Banner variant="success" layout="narrow">
+        Senha redefinida. Entre com a nova senha.
       </Banner>
     );
   }

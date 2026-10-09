@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
-import { CapturedMail, waitForMailTo } from './mailpit.js';
+import { CapturedMail, extractLink, waitForMailTo } from './mailpit.js';
 import { expectProblem } from './problem.js';
 
 export const PASSWORD = 'uma senha bem longa';
@@ -14,16 +14,24 @@ export const INVALID_CREDENTIALS = {
   detail: 'E-mail ou senha incorretos.',
 };
 
+const INVALID_TOKEN = {
+  title: 'Bad Request',
+  status: 400,
+  code: 'invalid_token',
+  detail: expect.any(String),
+};
+
 export const sleep = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /** O token do link de verificação que o e-mail traz. */
 export function verificationToken(mail: CapturedMail): string {
-  const link = /https?:\/\/\S+\/verificar-email\?token=\S+/.exec(mail.text);
-  if (!link) {
-    throw new Error(`O e-mail "${mail.subject}" não traz link de verificação.`);
-  }
-  return new URL(link[0]).searchParams.get('token') ?? '';
+  return extractLink(mail, '/verificar-email').searchParams.get('token') ?? '';
+}
+
+/** O token do link de redefinição de senha que o e-mail traz. */
+export function resetToken(mail: CapturedMail): string {
+  return extractLink(mail, '/redefinir-senha').searchParams.get('token') ?? '';
 }
 
 /** As chamadas da autenticação, contra uma aplicação de teste. */
@@ -40,6 +48,9 @@ export function authRoutes(app: INestApplication<App>) {
     post('login', { email, password });
   const logout = (refreshToken: string) => post('logout', { refreshToken });
   const refresh = (refreshToken: string) => post('refresh', { refreshToken });
+  const forgotPassword = (email: string) => post('forgot-password', { email });
+  const resetPassword = (token: string, password: string) =>
+    post('reset-password', { token, password });
 
   /** Cadastra o e-mail e devolve o token do link de verificação que chegou. */
   const registerAndGetToken = async (email: string) => {
@@ -50,6 +61,16 @@ export function authRoutes(app: INestApplication<App>) {
   /** Deixa o e-mail com um Usuário já verificado. */
   const registerVerified = async (email: string) => {
     await verifyEmail(await registerAndGetToken(email)).expect(204);
+  };
+
+  /**
+   * Pede a redefinição e devolve o token do link que chegou. `count` é quantos
+   * e-mails o endereço já tem de ter recebido com este: o padrão conta o do
+   * cadastro e o do pedido.
+   */
+  const requestResetToken = async (email: string, count = 2) => {
+    await forgotPassword(email).expect(204);
+    return resetToken(await waitForMailTo(email, { count }));
   };
 
   /** Deixa um Usuário verificado com uma Sessão aberta e devolve o par de tokens dela. */
@@ -71,6 +92,9 @@ export function authRoutes(app: INestApplication<App>) {
     login,
     logout,
     refresh,
+    forgotPassword,
+    resetPassword,
+    requestResetToken,
     registerAndGetToken,
     registerVerified,
     openSession,
@@ -81,13 +105,16 @@ export function authRoutes(app: INestApplication<App>) {
         ? call.set('Authorization', `Bearer ${accessToken}`)
         : call;
     },
+    /** A verificação de e-mail recusa o token com `invalid_token`. */
     expectInvalidToken: async (token: string) => {
-      expectProblem(await verifyEmail(token).expect(400), {
-        title: 'Bad Request',
-        status: 400,
-        code: 'invalid_token',
-        detail: expect.any(String),
-      });
+      expectProblem(await verifyEmail(token).expect(400), INVALID_TOKEN);
+    },
+    /** A redefinição de senha recusa o token com `invalid_token`. */
+    expectInvalidResetToken: async (token: string, password = PASSWORD) => {
+      expectProblem(
+        await resetPassword(token, password).expect(400),
+        INVALID_TOKEN,
+      );
     },
     /** A renovação recusa o token com `unauthenticated`. */
     expectRefreshRejected: async (refreshToken: string) => {

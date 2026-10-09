@@ -59,6 +59,15 @@ export class UsersService {
     return this.users.replaceUnverifiedRegistration(id, registration);
   }
 
+  /**
+   * Troca a senha de quem provou que controla a caixa de e-mail, e por isso o
+   * Usuário também sai verificado. Devolve o Usuário, ou `null` se ele não
+   * existe.
+   */
+  resetPassword(id: string, passwordHash: string): Promise<User | null> {
+    return this.users.resetPassword(id, passwordHash, new Date());
+  }
+
   markEmailVerified(id: string): Promise<void> {
     return this.users.markEmailVerified(id, new Date());
   }
