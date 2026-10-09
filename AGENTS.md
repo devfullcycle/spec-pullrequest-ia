@@ -40,7 +40,7 @@ Os contêineres `web` e `api` preparam o próprio ambiente ao subir e depois fic
 Na subida, o contêiner `api` faz sozinho, nesta ordem:
 
 1. Instala as dependências (`pnpm install`).
-2. Cria o `apps/api/.env` a partir do `apps/api/.env.example`, se ele ainda não existir.
+2. Cria o `apps/api/.env` a partir do `apps/api/.env.example`, se ele ainda não existir. Se ele já existe, acrescenta as variáveis que o `.env.example` ganhou depois, sem trocar nenhum valor.
 3. Gera o par de chaves do JWT e o grava no `.env`, se ele ainda não tiver as chaves.
 4. Gera o cliente do Prisma e aplica as migrações pendentes no banco.
 

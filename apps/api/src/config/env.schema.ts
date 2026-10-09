@@ -12,6 +12,8 @@ export interface Env {
   MAIL_FROM: string;
   SMTP_TIMEOUT_MS: number;
   SMTP_IDLE_TIMEOUT_MS: number;
+  WEB_ORIGIN: string;
+  EMAIL_VERIFICATION_TTL_SECONDS: number;
 }
 
 /**
@@ -56,6 +58,19 @@ const mailSender = Joi.string()
       '{{#label}} must be an e-mail address, alone or as "Name <address>"',
   });
 
+/** Origem do frontend: esquema, host e porta, sem caminho (`https://app.exemplo.com`). */
+const webOrigin = Joi.string()
+  .uri({ scheme: ['http', 'https'] })
+  .custom((value: string, helpers) =>
+    new URL(value).origin === value
+      ? value
+      : helpers.error('webOrigin.invalid'),
+  )
+  .messages({
+    'webOrigin.invalid':
+      '{{#label}} must be an origin, without path or trailing slash',
+  });
+
 /**
  * Confere que as duas chaves do JWT formam um par: a pública derivada da
  * privada tem de ser a que foi configurada. Sem isso, uma troca de chave pela
@@ -96,6 +111,13 @@ export const envSchema = Joi.object<Env>({
   MAIL_FROM: mailSender.required(),
   SMTP_TIMEOUT_MS: Joi.number().integer().min(1).default(10_000),
   SMTP_IDLE_TIMEOUT_MS: Joi.number().integer().min(1).default(60_000),
+
+  WEB_ORIGIN: webOrigin.required(),
+
+  EMAIL_VERIFICATION_TTL_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .default(24 * 60 * 60),
 })
   .custom(matchingJwtKeys)
   .messages({

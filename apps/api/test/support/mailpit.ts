@@ -55,13 +55,9 @@ export async function waitForMailTo(
   address: string,
   { count = 1, timeoutMs = 5000 }: WaitForMailOptions = {},
 ): Promise<CapturedMail> {
-  const query = encodeURIComponent(`to:"${address}"`);
-
   const newest = await vi.waitFor(
     async () => {
-      const { messages } = await getJson<MailpitSearchResult>(
-        `/api/v1/search?query=${query}`,
-      );
+      const messages = await searchMailTo(address);
       if (messages.length < count) {
         throw new Error(
           `O Mailpit recebeu ${messages.length} e-mail(s) para ${address}, e o teste esperava ${count}.`,
@@ -73,6 +69,30 @@ export async function waitForMailTo(
   );
   // Só o e-mail devolvido tem o corpo buscado.
   return readMail(newest.ID);
+}
+
+/**
+ * Quantos e-mails o endereço recebeu até agora. Serve para provar que um envio
+ * não aconteceu: o teste provoca depois um envio que conhece, espera por ele com
+ * `waitForMailTo` e confere que o total não passou do esperado.
+ */
+export async function countMailTo(address: string): Promise<number> {
+  return (await searchMailTo(address)).length;
+}
+
+/** Todos os e-mails que o endereço recebeu até agora, do mais novo para o mais antigo. */
+export async function readAllMailTo(address: string): Promise<CapturedMail[]> {
+  const messages = await searchMailTo(address);
+  return Promise.all(messages.map(({ ID }) => readMail(ID)));
+}
+
+/** Os e-mails que o endereço recebeu, do mais novo para o mais antigo. */
+async function searchMailTo(address: string): Promise<{ ID: string }[]> {
+  const query = encodeURIComponent(`to:"${address}"`);
+  const { messages } = await getJson<MailpitSearchResult>(
+    `/api/v1/search?query=${query}`,
+  );
+  return messages;
 }
 
 async function readMail(id: string): Promise<CapturedMail> {

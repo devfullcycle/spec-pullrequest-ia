@@ -9,7 +9,7 @@ import {
 } from "@/lib/api/types";
 
 /** Quanto esperar a API, em milissegundos. O mesmo padrão dos prazos da própria API. */
-const TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 interface ApiRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -17,6 +17,8 @@ interface ApiRequestOptions {
   body?: unknown;
   /** Token de acesso do Usuário, nas rotas protegidas. */
   accessToken?: string;
+  /** Quanto esperar a resposta, em milissegundos. O padrão é de 10 segundos. */
+  timeoutMs?: number;
 }
 
 /**
@@ -29,7 +31,12 @@ interface ApiRequestOptions {
  */
 export async function apiRequest<T = void>(
   path: string,
-  { method = "GET", body, accessToken }: ApiRequestOptions = {},
+  {
+    method = "GET",
+    body,
+    accessToken,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  }: ApiRequestOptions = {},
 ): Promise<ApiResult<T>> {
   const headers = new Headers({ Accept: "application/json" });
   if (body !== undefined) headers.set("Content-Type", "application/json");
@@ -44,7 +51,7 @@ export async function apiRequest<T = void>(
       method,
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (cause) {
     // Na pré-renderização, o Next.js interrompe o `fetch` com um erro próprio, que não é falha da API.

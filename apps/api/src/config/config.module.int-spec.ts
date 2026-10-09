@@ -12,6 +12,7 @@ const REQUIRED_VARIABLES = [
   'JWT_PUBLIC_KEY',
   'SMTP_URL',
   'MAIL_FROM',
+  'WEB_ORIGIN',
 ];
 
 // As variáveis válidas já estão no ambiente, carregadas do `.env` pela base de
@@ -34,10 +35,15 @@ describe('Variáveis de ambiente na subida', () => {
     vi.stubEnv('DATABASE_URL', 'postgresql://user:pass@postgres:5432/db');
     vi.stubEnv('SMTP_URL', 'smtp://mailpit:1025');
     vi.stubEnv('MAIL_FROM', 'Remetente <remetente@example.com>');
+    vi.stubEnv('WEB_ORIGIN', 'https://app.example.com');
+    vi.stubEnv('EMAIL_VERIFICATION_TTL_SECONDS', '600');
 
     const moduleRef = await boot();
 
-    expect(moduleRef.get(appConfig.KEY)).toEqual({ port: 4321 });
+    expect(moduleRef.get(appConfig.KEY)).toEqual({
+      port: 4321,
+      webOrigin: 'https://app.example.com',
+    });
     expect(moduleRef.get(databaseConfig.KEY)).toEqual({
       url: 'postgresql://user:pass@postgres:5432/db',
       connectTimeoutMs: 10_000,
@@ -51,6 +57,17 @@ describe('Variáveis de ambiente na subida', () => {
     const auth = moduleRef.get(authConfig.KEY);
     expect(auth.jwtPrivateKey).toContain('-----BEGIN PRIVATE KEY-----');
     expect(auth.jwtPublicKey).toContain('-----BEGIN PUBLIC KEY-----');
+    expect(auth.emailVerificationTtlSeconds).toBe(600);
+  });
+
+  it('dá 24 horas ao link de verificação quando EMAIL_VERIFICATION_TTL_SECONDS não é definida', async () => {
+    vi.stubEnv('EMAIL_VERIFICATION_TTL_SECONDS', undefined);
+
+    const moduleRef = await boot();
+
+    expect(moduleRef.get(authConfig.KEY).emailVerificationTtlSeconds).toBe(
+      86_400,
+    );
   });
 
   it('usa a porta 3000 quando PORT não é definida', async () => {
@@ -83,6 +100,11 @@ describe('Variáveis de ambiente na subida', () => {
     ['SMTP_TIMEOUT_MS', '0'],
     ['SMTP_TIMEOUT_MS', 'logo'],
     ['SMTP_IDLE_TIMEOUT_MS', '0'],
+    ['WEB_ORIGIN', 'app.example.com'],
+    ['WEB_ORIGIN', 'https://app.example.com/'],
+    ['WEB_ORIGIN', 'https://app.example.com/entrar'],
+    ['EMAIL_VERIFICATION_TTL_SECONDS', '0'],
+    ['EMAIL_VERIFICATION_TTL_SECONDS', 'um dia'],
     ['JWT_PRIVATE_KEY', 'não é uma chave'],
     ['JWT_PUBLIC_KEY', 'não é uma chave'],
   ])(
@@ -130,7 +152,7 @@ describe('Variáveis de ambiente na subida', () => {
 
       const moduleRef = await boot();
 
-      expect(moduleRef.get(authConfig.KEY)).toEqual({
+      expect(moduleRef.get(authConfig.KEY)).toMatchObject({
         jwtPrivateKey: privateKey,
         jwtPublicKey: publicKey,
       });

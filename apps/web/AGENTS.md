@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Estado atual
 
-A base está pronta: os tokens do design system no `app/globals.css`, os componentes que a autenticação usa (`components/ui/` e `components/auth/`), o cliente da API (`lib/api/`), a vitrine (`app/vitrine/`) e os testes no navegador (`e2e/`). As telas, `lib/session`, `lib/dal` e o `proxy.ts` **ainda não existem**, e a página inicial é provisória. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
+A base está pronta: os tokens do design system no `app/globals.css`, os componentes que a autenticação usa (`components/ui/` e `components/auth/`), o cliente da API (`lib/api/`), a vitrine (`app/vitrine/`) e os testes no navegador (`e2e/`). Das telas, existem as do cadastro e da verificação de e-mail, em `app/(auth)/`, e a de entrar, só com o cartão e o aviso de e-mail verificado. O formulário de login, `lib/session`, `lib/dal` e o `proxy.ts` **ainda não existem**, e a página inicial é provisória. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
 
 ## Comandos
 
@@ -122,6 +122,8 @@ A exceção conhecida é o upload: o navegador envia os chunks direto ao Cloud S
 ## Formulários e textos
 
 - **Formulários:** Server Actions com `useActionState`. A validação é feita com zod na Server Action, e o resultado volta como estado do formulário. A validação no navegador é só conforto.
+- **Onde ficam:** o formulário é um componente de cliente ao lado da página que o usa (`app/(auth)/criar-conta/register-form.tsx`). As Server Actions de um grupo de rotas ficam num `actions.ts` na pasta do grupo, e o estado que elas devolvem, num `form-state.ts` ao lado.
+- **Erro junto ao campo:** o formulário leva `noValidate`, para o erro aparecer no campo, com o texto da web, e não no balão do navegador. A senha nunca volta no estado do formulário.
 - **Erros da API:** a API responde com um `code` estável. O cliente de `lib/api` devolve o erro esperado como valor (`{ ok: false, error }`), e não como exceção. A web traduz o `code` em mensagem num único mapa, o de `lib/api/error-messages.ts`, e nenhum componente mostra a mensagem crua da API.
 - **Textos:** só em português, escritos nos componentes, sem biblioteca de tradução.
 
