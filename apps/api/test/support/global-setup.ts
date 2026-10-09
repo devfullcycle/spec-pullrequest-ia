@@ -8,7 +8,7 @@ import { loadTestEnv } from './test-env.js';
 export default function setup(): void {
   loadTestEnv();
 
-  execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
+  execFileSync('node_modules/.bin/prisma', ['migrate', 'deploy'], {
     env: process.env,
     stdio: 'pipe',
   });

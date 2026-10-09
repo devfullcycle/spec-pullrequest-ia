@@ -103,7 +103,6 @@ describe('Envio de e-mail por SMTP', () => {
       ).rejects.toThrow();
       expect(Date.now() - startedAt).toBeLessThan(3000);
     } finally {
-      vi.unstubAllEnvs();
       await moduleWithSilentServer.close();
       sockets.forEach((socket) => socket.destroy());
       silentServer.close();

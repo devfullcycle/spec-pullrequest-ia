@@ -20,10 +20,15 @@ RUN pnpm install --frozen-lockfile --prod
 FROM base AS build
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
 
 # O cliente do Prisma é gerado dentro de src/ e compilado junto com a aplicação.
-RUN pnpm exec prisma generate && pnpm build
+# Ele só depende do schema, então fica numa camada que o código não invalida.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml prisma.config.ts ./
+COPY prisma ./prisma
+RUN pnpm exec prisma generate
+
+COPY . .
+RUN pnpm build
 
 FROM node:24-slim AS runner
 

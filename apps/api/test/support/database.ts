@@ -1,10 +1,10 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../../src/generated/prisma/client.js';
+import { isTestDatabaseUrl } from './test-env.js';
 
-/** Cliente do banco de testes, para a base de testes. Quem chama fecha a conexão. */
-export function createTestDatabaseClient(): PrismaClient {
+function createTestDatabaseClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL ?? '';
-  if (!new URL(connectionString).pathname.endsWith('_test')) {
+  if (!isTestDatabaseUrl(connectionString)) {
     throw new Error(
       'A base de testes só fala com o banco de testes (sufixo _test).',
     );

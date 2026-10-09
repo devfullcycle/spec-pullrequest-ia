@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { appConfig } from './app.config.js';
 import { authConfig } from './auth.config.js';
 import { databaseConfig } from './database.config.js';
-import { envSchema } from './env.schema.js';
+import { validatedEnv } from './env.js';
 import { mailConfig } from './mail.config.js';
 
 interface AppConfigModuleOptions {
@@ -26,7 +26,7 @@ export class AppConfigModule {
     return ConfigModule.forRoot({
       isGlobal: true,
       ignoreEnvFile: options.ignoreEnvFile ?? false,
-      validationSchema: envSchema,
+      validate: validatedEnv,
       load: [appConfig, authConfig, databaseConfig, mailConfig],
     });
   }

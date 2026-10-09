@@ -23,11 +23,12 @@ function boot(): Promise<TestingModule> {
   }).compile();
 }
 
-describe('Variáveis de ambiente na subida', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
+/** A mensagem de erro da subida, quando ela aponta a variável. */
+function invalid(variable: string): RegExp {
+  return new RegExp(`Config validation error: [^]*"${variable}"`);
+}
 
+describe('Variáveis de ambiente na subida', () => {
   it('entrega as variáveis válidas já convertidas e agrupadas por assunto', async () => {
     vi.stubEnv('PORT', '4321');
     vi.stubEnv('DATABASE_URL', 'postgresql://user:pass@postgres:5432/db');
@@ -82,9 +83,7 @@ describe('Variáveis de ambiente na subida', () => {
     async (variable, value) => {
       vi.stubEnv(variable, value);
 
-      await expect(boot()).rejects.toThrow(
-        new RegExp(`Config validation error: [^]*"${variable}"`),
-      );
+      await expect(boot()).rejects.toThrow(invalid(variable));
     },
   );
 
@@ -169,6 +168,6 @@ describe('Variáveis de ambiente na subida', () => {
 
     await expect(
       Test.createTestingModule({ imports: [AppModule] }).compile(),
-    ).rejects.toThrow(/Config validation error: [^]*"SMTP_URL"/);
+    ).rejects.toThrow(invalid('SMTP_URL'));
   });
 });

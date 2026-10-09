@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { MAILPIT_API_URL } from './test-env.js';
+
+/** Endereço da API HTTP do Mailpit, de onde os testes leem os e-mails enviados. */
+const MAILPIT_API_URL = 'http://mailpit:8025';
 
 /** Um e-mail capturado pelo Mailpit, só com o que os testes conferem. */
 export interface CapturedMail {
@@ -56,23 +58,23 @@ export async function waitForMailTo(
   { count = 1, timeoutMs = 5000 }: WaitForMailOptions = {},
 ): Promise<CapturedMail> {
   const query = encodeURIComponent(`to:"${address}"`);
-  const deadline = Date.now() + timeoutMs;
 
-  for (;;) {
-    const { messages } = await getJson<MailpitSearchResult>(
-      `/api/v1/search?query=${query}`,
-    );
-    if (messages.length >= count) {
-      // Só o e-mail devolvido tem o corpo buscado.
-      return readMail(messages[0].ID);
-    }
-    if (Date.now() > deadline) {
-      throw new Error(
-        `O Mailpit recebeu ${messages.length} e-mail(s) para ${address}, e o teste esperava ${count}.`,
+  const newest = await vi.waitFor(
+    async () => {
+      const { messages } = await getJson<MailpitSearchResult>(
+        `/api/v1/search?query=${query}`,
       );
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
+      if (messages.length < count) {
+        throw new Error(
+          `O Mailpit recebeu ${messages.length} e-mail(s) para ${address}, e o teste esperava ${count}.`,
+        );
+      }
+      return messages[0];
+    },
+    { timeout: timeoutMs, interval: 100 },
+  );
+  // Só o e-mail devolvido tem o corpo buscado.
+  return readMail(newest.ID);
 }
 
 async function readMail(id: string): Promise<CapturedMail> {

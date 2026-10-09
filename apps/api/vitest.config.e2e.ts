@@ -1,16 +1,8 @@
-import { defineConfig } from 'vitest/config';
-import tsconfigPaths from 'vite-tsconfig-paths';
+import { defineConfig, mergeConfig } from 'vitest/config';
+import { realDependenciesConfig } from './vitest.shared.js';
 
 // Suíte de ponta a ponta: `*.e2e-spec.ts`, em `test/`, pela porta HTTP da aplicação inteira.
-export default defineConfig({
-  plugins: [tsconfigPaths()],
-  test: {
-    globals: true,
-    root: './',
-    include: ['test/**/*.e2e-spec.ts'],
-    globalSetup: ['./test/support/global-setup.ts'],
-    setupFiles: ['./test/support/setup.ts'],
-    // Os arquivos dividem o mesmo banco de testes, então rodam um por vez.
-    fileParallelism: false,
-  },
-});
+export default mergeConfig(
+  realDependenciesConfig,
+  defineConfig({ test: { include: ['test/**/*.e2e-spec.ts'] } }),
+);

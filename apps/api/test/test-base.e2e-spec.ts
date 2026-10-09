@@ -3,7 +3,7 @@ import { App } from 'supertest/types.js';
 import { appConfig } from '../src/config/app.config.js';
 import { PrismaService } from '../src/infra/database/prisma.service.js';
 import { createTestApp } from './support/create-test-app.js';
-import { cleanDatabase, createTestDatabaseClient } from './support/database.js';
+import { cleanDatabase } from './support/database.js';
 
 // Confere a própria base de testes. É o único teste que olha o banco por dentro:
 // os testes das funcionalidades só observam o que sai pelas rotas.
@@ -33,19 +33,12 @@ describe('Base de testes', () => {
       expect(appWithOverride.get(appConfig.KEY).port).toBe(4999);
     } finally {
       await appWithOverride.close();
-      vi.unstubAllEnvs();
     }
   });
 
   it('valida a variável trocada pelo teste, e não sobe a aplicação se ela for inválida', async () => {
     vi.stubEnv('PORT', 'abc');
-    try {
-      await expect(createTestApp()).rejects.toThrow(
-        /Config validation error: [^]*"PORT" must be a number/,
-      );
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    await expect(createTestApp()).rejects.toThrow(/"PORT" must be a number/);
   });
 
   it('aplica no banco de testes as mesmas migrações do banco de desenvolvimento', async () => {
@@ -59,7 +52,7 @@ describe('Base de testes', () => {
   });
 
   it('esvazia as tabelas na limpeza, mas preserva o histórico de migrações', async () => {
-    const database = createTestDatabaseClient();
+    const database = app.get(PrismaService);
     try {
       await database.$executeRaw`CREATE TABLE test_base_probe (id INT PRIMARY KEY)`;
       await database.$executeRaw`INSERT INTO test_base_probe (id) VALUES (1), (2)`;
@@ -76,7 +69,6 @@ describe('Base de testes', () => {
       expect(migrations).toBeGreaterThan(0);
     } finally {
       await database.$executeRaw`DROP TABLE IF EXISTS test_base_probe`;
-      await database.$disconnect();
     }
   });
 });

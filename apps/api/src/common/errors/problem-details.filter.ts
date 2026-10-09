@@ -96,11 +96,8 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     }
 
     // A mensagem do framework nunca entra na resposta: ela não faz parte do contrato.
-    const status = frameworkStatus(exception);
-    if (status === undefined) {
-      this.log(exception);
-      return this.problem(500, INTERNAL_ERROR);
-    }
+    // O que não veio do framework é inesperado e sai como 500.
+    const status = frameworkStatus(exception) ?? 500;
     if (status >= 500) {
       this.log(exception);
     }

@@ -16,6 +16,8 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10m
+      # Durante a preparação, confere a cada segundo, para o `up --wait` não esperar à toa.
+      start_interval: 1s
 
   api:
     build:
@@ -40,6 +42,8 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10m
+      # Durante a preparação, confere a cada segundo, para o `up --wait` não esperar à toa.
+      start_interval: 1s
 
   postgres:
     image: postgres:17
@@ -53,9 +57,11 @@ services:
       # Por TCP, e não pelo socket: na primeira subida a imagem roda um servidor
       # temporário, só no socket, para criar o banco, e ele ainda não é o definitivo.
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U app -d app"]
-      interval: 2s
+      interval: 5s
       timeout: 3s
-      retries: 30
+      retries: 5
+      start_period: 1m
+      start_interval: 1s
 
   mailpit:
     image: axllent/mailpit:v1.30

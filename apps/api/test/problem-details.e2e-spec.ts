@@ -14,7 +14,9 @@ import { IsEmail, IsString, MinLength, ValidateNested } from 'class-validator';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { DomainError } from '../src/common/errors/domain-error.js';
+import { FieldError } from '../src/common/errors/input-validation.error.js';
 import { createTestApp } from './support/create-test-app.js';
+import { expectProblem } from './support/problem.js';
 
 class ProbeAddressDto {
   @IsString()
@@ -112,14 +114,12 @@ describe('Formato de erro da API (RFC 9457)', () => {
         .send({ email: 'não é e-mail', address: { city: 'X' } })
         .expect(400);
 
-      expect(response.headers['content-type']).toMatch(
-        /^application\/problem\+json/,
-      );
-      expect(response.body).toMatchObject({
-        type: 'about:blank',
+      expectProblem(response, {
         title: 'Bad Request',
         status: 400,
         code: 'validation_error',
+        detail: expect.any(String),
+        errors: expect.any(Array),
       });
     });
 
@@ -129,10 +129,7 @@ describe('Formato de erro da API (RFC 9457)', () => {
         .send({ email: 'não é e-mail', address: { city: 'X' } })
         .expect(400);
 
-      const errors = response.body.errors as {
-        field: string;
-        messages: string[];
-      }[];
+      const errors = response.body.errors as FieldError[];
       expect(errors.map((error) => error.field).sort()).toEqual([
         'address.city',
         'email',
@@ -149,10 +146,8 @@ describe('Formato de erro da API (RFC 9457)', () => {
         .send('{"email": ')
         .expect(400);
 
-      expect(response.headers['content-type']).toMatch(
-        /^application\/problem\+json/,
-      );
-      expect(response.body).toMatchObject({
+      expectProblem(response, {
+        title: 'Bad Request',
         status: 400,
         code: 'validation_error',
       });
@@ -179,11 +174,7 @@ describe('Formato de erro da API (RFC 9457)', () => {
         .get('/v1/rota-que-nao-existe')
         .expect(404);
 
-      expect(response.headers['content-type']).toMatch(
-        /^application\/problem\+json/,
-      );
-      expect(response.body).toEqual({
-        type: 'about:blank',
+      expectProblem(response, {
         title: 'Not Found',
         status: 404,
         code: 'not_found',
@@ -197,11 +188,7 @@ describe('Formato de erro da API (RFC 9457)', () => {
         .get('/v1/probe/domain-error')
         .expect(400);
 
-      expect(response.headers['content-type']).toMatch(
-        /^application\/problem\+json/,
-      );
-      expect(response.body).toEqual({
-        type: 'about:blank',
+      expectProblem(response, {
         title: 'Bad Request',
         status: 400,
         code: 'invalid_move',
@@ -216,11 +203,7 @@ describe('Formato de erro da API (RFC 9457)', () => {
         .get('/v1/probe/unexpected-error')
         .expect(500);
 
-      expect(response.headers['content-type']).toMatch(
-        /^application\/problem\+json/,
-      );
-      expect(response.body).toEqual({
-        type: 'about:blank',
+      expectProblem(response, {
         title: 'Internal Server Error',
         status: 500,
         code: 'internal_error',
@@ -234,8 +217,7 @@ describe('Formato de erro da API (RFC 9457)', () => {
         .get('/v1/probe/third-party-error')
         .expect(500);
 
-      expect(response.body).toEqual({
-        type: 'about:blank',
+      expectProblem(response, {
         title: 'Internal Server Error',
         status: 500,
         code: 'internal_error',
@@ -271,11 +253,7 @@ describe('Formato de erro da API (RFC 9457)', () => {
         .get('/v1/probe/deliberate-503')
         .expect(503);
 
-      expect(response.headers['content-type']).toMatch(
-        /^application\/problem\+json/,
-      );
-      expect(response.body).toEqual({
-        type: 'about:blank',
+      expectProblem(response, {
         title: 'Service Unavailable',
         status: 503,
         code: 'service_unavailable',

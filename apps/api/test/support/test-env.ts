@@ -2,15 +2,21 @@ import { existsSync } from 'node:fs';
 
 const TEST_DATABASE_SUFFIX = '_test';
 
+/** Diz se a URL aponta para o banco de testes, e não para o de desenvolvimento. */
+export function isTestDatabaseUrl(databaseUrl: string): boolean {
+  return new URL(databaseUrl).pathname.endsWith(TEST_DATABASE_SUFFIX);
+}
+
 /**
  * Troca o banco da URL pelo banco de testes, que fica no mesmo PostgreSQL e leva
  * o sufixo `_test` (`app` vira `app_test`).
  */
-export function toTestDatabaseUrl(databaseUrl: string): string {
-  const url = new URL(databaseUrl);
-  if (!url.pathname.endsWith(TEST_DATABASE_SUFFIX)) {
-    url.pathname += TEST_DATABASE_SUFFIX;
+function toTestDatabaseUrl(databaseUrl: string): string {
+  if (isTestDatabaseUrl(databaseUrl)) {
+    return databaseUrl;
   }
+  const url = new URL(databaseUrl);
+  url.pathname += TEST_DATABASE_SUFFIX;
   return url.toString();
 }
 
@@ -33,6 +39,3 @@ export function loadTestEnv(): void {
   }
   process.env.DATABASE_URL = toTestDatabaseUrl(databaseUrl);
 }
-
-/** Endereço da API HTTP do Mailpit, de onde os testes leem os e-mails enviados. */
-export const MAILPIT_API_URL = 'http://mailpit:8025';
