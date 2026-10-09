@@ -268,6 +268,7 @@ flowchart LR
 - **Gateway de pagamento:** sandbox no staging e credenciais reais só em produção.
 - **Infraestrutura como código:** os dois projetos são criados pelo mesmo conjunto de arquivos (Terraform ou OpenTofu), para não divergirem.
 - **Custo do staging:** o Cloud SQL usa a menor instância disponível, sem alta disponibilidade.
+- **Migrações do banco:** ainda não há como aplicá-las no staging nem na produção. Só o ambiente local as aplica, na subida do contêiner da API. A imagem de produção sobe apenas a aplicação: ela não leva a ferramenta de migração nem os arquivos de migração. O que falta decidir está nas questões em aberto da seção 7.
 
 ## 7. Decisões, riscos e questões em aberto
 
@@ -313,4 +314,5 @@ flowchart LR
 - [ ] Observabilidade: logs, métricas e alertas ainda não foram desenhados.
 - [ ] Compatibilidade do `fake-gcs-server` com sessão de upload retomável e URLs assinadas.
 - [ ] Escolha entre Terraform e OpenTofu para a infraestrutura como código.
+- [ ] Migrações do banco no staging e na produção. Falta decidir quem as executa (um passo da esteira antes da publicação, ou uma tarefa do Cloud Run), com qual imagem (a da aplicação, acrescida da ferramenta de migração, ou uma imagem própria), com qual credencial de banco e em que ordem em relação à troca de versão da aplicação, já que a mesma imagem é promovida do staging para a produção.
 - [ ] Prazo, equipe e orçamento, que continuam indefinidos no brief.

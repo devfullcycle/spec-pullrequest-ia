@@ -82,8 +82,9 @@ As suítes de integração e de ponta a ponta usam a base de `test/support/`. N�
 
 - **Banco de testes:** é um banco separado no mesmo PostgreSQL, com o nome do banco de `DATABASE_URL` mais o sufixo `_test`. Ele é criado e migrado sozinho no começo de cada execução da suíte, e todas as tabelas são esvaziadas antes de cada arquivo de teste. Por dividirem esse banco, os arquivos rodam um por vez.
 - **Aplicação:** um teste de ponta a ponta sobe a aplicação inteira com `createTestApp()`, que aplica a mesma configuração do `main.ts`, e fala com ela só por HTTP, com `supertest`. No fim, fecha com `app.close()`.
-- **E-mail:** os testes leem o que foi enviado pela API HTTP do Mailpit, com `waitForMailTo()`. Cada teste usa um destinatário próprio, de `uniqueEmail()`, e acha os e-mails por ele. A caixa do Mailpit nunca é apagada, porque ela também serve ao desenvolvimento.
-- **Prazos:** são testados reduzindo a variável de ambiente no teste, com `vi.stubEnv` antes de `createTestApp()`, sem relógio falso dentro dos services.
+- **E-mail:** os testes leem o que foi enviado pela API HTTP do Mailpit, com `waitForMailTo()`. Cada teste usa um destinatário próprio, de `uniqueEmail()`, e acha os e-mails por ele. A caixa do Mailpit nunca é apagada, porque ela também serve ao desenvolvimento. Quando o teste provoca mais de um e-mail para o mesmo destinatário (reenvio, redefinição de senha), ele espera o seguinte com `waitForMailTo(endereço, { count: 2 })`. Sem o `count`, a espera termina no primeiro e-mail que já existir.
+- **Prazos:** são testados reduzindo a variável de ambiente no teste, com `vi.stubEnv` antes de `createTestApp()`, sem relógio falso dentro dos services. O valor trocado passa pelo schema: se for inválido, a aplicação do teste não sobe.
+- **Configuração no teste:** um teste que precisa de um valor de configuração o pega da configuração injetada (`app.get(mailConfig.KEY)`), e não de `process.env`.
 - **Rota só de teste:** para provar um comportamento da fundação que nenhuma rota de negócio exercita, o teste declara um controller próprio e o passa em `createTestApp({ controllers })`. Ele não entra na aplicação real.
 
 ## Aplicação HTTP
@@ -147,7 +148,8 @@ A mesma regra vale para o repository: ele não importa nada de HTTP.
 - **No controller:** nada de `try/catch` para converter erro em resposta, nem `res.status(...).json(...)`. O controller deixa o erro subir até o filter.
 - **Erro de domínio:** estende `DomainError`, de `src/common/errors/`, e fica no módulo dono da regra. Um `code` novo entra na mesma tarefa no tipo `ErrorCode`, no mapa de status do filter e na tabela da seção 3.1 do LLD. A mensagem do erro vai para o campo `detail` da resposta, então não traz detalhes internos.
 - **Validação de entrada:** os DTOs são validados por um pipe global, com os decorators do class-validator. O erro dele passa pelo mesmo filter e sai como `validation_error`. Os campos que o DTO não declara são descartados.
-- **Erro inesperado:** o filter registra em log e responde 500, sem expor mensagem interna nem stack trace.
+- **Erro inesperado:** o filter registra em log e responde 500, sem expor mensagem interna nem stack trace. Isso vale também para o erro de uma biblioteca que traz um `statusCode` próprio: o filter só aceita o status de uma `HttpException` e dos erros do leitor do corpo do Express.
+- **Erro de fornecedor:** a implementação de `src/infra/` que recebe um erro com significado para a regra de negócio (objeto inexistente, limite atingido) o converte em erro de domínio. Ela não deixa o erro do SDK subir contando com o status dele.
 
 ### SOLID no dia a dia
 
@@ -161,7 +163,8 @@ A mesma regra vale para o repository: ele não importa nada de HTTP.
 Toda configuração entra no projeto por um módulo de config próprio, em `src/config/`, feito com `@nestjs/config` e validado com Joi.
 
 - **Validação na subida:** um schema do Joi (`env.schema.ts`) descreve todas as variáveis de ambiente, com tipo, obrigatoriedade e valor padrão. Ele é passado ao `ConfigModule.forRoot` em `validationSchema`. Se uma variável faltar ou vier inválida, a aplicação não sobe e o erro diz qual é.
-- **Segredos na mensagem de erro:** a mensagem de validação vai para o log. Numa variável secreta, a regra do schema não pode usar uma mensagem do Joi que repita o valor recusado, como a de `pattern`. Troque a mensagem, como fazem as chaves do JWT.
+- **Segredos na mensagem de erro:** a mensagem de validação vai para o log. Numa variável secreta, a regra do schema não pode usar uma mensagem do Joi que repita o valor recusado, como a de `pattern`. Use um `.custom()` com mensagem fixa, como fazem as chaves do JWT.
+- **Leitura do valor validado:** as configurações por assunto leem de `validatedEnv()`, que devolve as variáveis já convertidas e com os padrões aplicados pelo schema. Nenhuma delas converte valor nem repete um padrão, e nenhuma lê `process.env`. A validação roda de novo a cada leitura, então um valor trocado depois da subida do módulo, como num teste, também passa pelo schema.
 - **Único ponto de leitura:** fora de `src/config/`, ninguém lê `process.env`. Services, guards e implementações de `src/infra/` recebem a configuração por injeção.
 - **Tipagem:** os valores saem do módulo já convertidos e tipados (número, booleano, duração), e não como `string | undefined`. Prefira configurações agrupadas por assunto, com `registerAs` (`auth`, `storage`, `mail`), a chaves soltas lidas por nome. Cada assunto tem o próprio arquivo (`mail.config.ts`) e é injetado pela chave dele: `@Inject(mailConfig.KEY) config: ConfigType<typeof mailConfig>`.
 - **Variável nova:** entra na mesma tarefa no schema do Joi, no `.env.example` e na tabela da seção 6 do LLD.

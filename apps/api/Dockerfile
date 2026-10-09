@@ -38,6 +38,10 @@ COPY --from=build --chown=node:node /app/package.json ./
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 
+# Esta imagem só sobe a aplicação: ela não leva a CLI do Prisma nem a pasta
+# prisma/, e por isso não aplica migrações. Como as migrações chegam ao staging
+# e à produção ainda não foi decidido (ver a seção 6.2 do docs/hld.md).
+
 USER node
 
 EXPOSE 3000

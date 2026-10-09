@@ -50,7 +50,9 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      # Por TCP, e não pelo socket: na primeira subida a imagem roda um servidor
+      # temporário, só no socket, para criar o banco, e ele ainda não é o definitivo.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U app -d app"]
       interval: 2s
       timeout: 3s
       retries: 30

@@ -277,6 +277,9 @@ Todo erro sai com `Content-Type: application/problem+json` e este corpo:
 - **Corpo malformado:** um JSON que não pode ser lido responde 400 com `validation_error`, sem `errors`.
 - **Campos desconhecidos:** os campos que a rota não declara são descartados, sem erro.
 - **Outros erros do framework:** um status que não está na tabela (405, 415 etc.) usa como `code` o nome do status em `snake_case`, por exemplo `method_not_allowed`.
+- **Erro 5xx lançado de propósito:** quando o código responde de propósito com 501, 502, 503 ou 504, o status é mantido e o `code` é o nome dele (`service_unavailable`). A resposta continua sem `detail`, e a falha vai para o log.
+- **Erro de terceiros:** só o que o framework levanta escolhe o status. Um erro de uma biblioteca ou do SDK de um fornecedor é sempre `internal_error`, mesmo que ele traga um status próprio.
+- **Falha depois de a resposta começar:** se o erro acontece com a resposta já em envio, não dá mais para mandar o corpo de erro. A API registra a falha e derruba a conexão, para o cliente perceber que a resposta veio incompleta.
 
 ### 3.2 Autenticação e conta
 
@@ -573,7 +576,7 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 | --- | --- | --- |
 | `PORT` | api | Porta HTTP, com padrão 3000. O Cloud Run a define em produção. |
 | `DATABASE_URL` | api | Conexão com o Cloud SQL (segredo). No desenvolvimento, aponta para o `postgres`. |
-| `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | Par de chaves RS256, em PEM (segredo) |
+| `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | Par de chaves RSA do RS256, em PEM (segredo). São aceitos os formatos PKCS#8, SPKI e PKCS#1. |
 | `GCS_BUCKET` | api | Nome do bucket privado |
 | `TASKS_QUEUE`, `WORKER_URL` | api | Fila do Cloud Tasks e endereço do worker |
 | `QUEUE_DRIVER` | api | `cloud-tasks` em staging e produção, `local` no desenvolvimento (chamada HTTP direta ao worker) |
@@ -582,13 +585,14 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 | `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | api | Padrões de 15 minutos e 30 dias |
 | `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | api | Credenciais do gateway (segredo) |
 | `SMTP_URL`, `MAIL_FROM` | api | Servidor SMTP do serviço de e-mail (segredo) e remetente. No desenvolvimento, aponta para o `mailpit`. |
+| `SMTP_TIMEOUT_MS` | api | Quanto esperar o servidor SMTP para conectar, saudar e responder, em milissegundos. Padrão de 10000. |
 | `WEB_ORIGIN` | api | Origem do frontend, para CORS e links de e-mail |
 | `INTERNAL_API_SECRET` | api e web | Segredo que autoriza a web a repassar o IP do usuário (segredo) |
 | `API_URL` | web | Endereço interno da API |
 | `COOKIE_DOMAIN` | web | Domínio dos cookies de token |
 | `COOKIE_SECURE` | web | Padrão `true`. `false` só no desenvolvimento, que usa HTTP. |
 
-**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL` e `MAIL_FROM`, e todas, menos `PORT`, são obrigatórias. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
+**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM` e `SMTP_TIMEOUT_MS`, e todas, menos `PORT` e `SMTP_TIMEOUT_MS`, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, ou que não pode ser lida, impede a subida. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
 
 **Ambiente local:** as variáveis da API ficam em `apps/api/.env`, fora do Git. Na primeira subida, o contêiner da API cria esse arquivo como cópia do `apps/api/.env.example`, que é versionado e funciona sem alterações, e um script gera as chaves do JWT e as grava nele. Os hosts são sempre os nomes dos serviços do Compose.
 
