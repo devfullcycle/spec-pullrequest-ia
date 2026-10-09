@@ -128,7 +128,8 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 /**
  * Status de um erro que o próprio framework levantou. Só dois tipos contam:
  *
- * - `HttpException`, do Nest ou lançada de propósito pelo código;
+ * - `HttpException`, do Nest ou lançada de propósito pelo código, desde que o
+ *   status seja de erro (4xx ou 5xx);
  * - erro do leitor do corpo do Express (JSON malformado, corpo grande demais),
  *   que vem marcado com `expose`, `type` e um status 4xx.
  *
@@ -138,7 +139,10 @@ export class ProblemDetailsFilter implements ExceptionFilter {
  */
 function frameworkStatus(exception: unknown): number | undefined {
   if (exception instanceof HttpException) {
-    return exception.getStatus();
+    const status = exception.getStatus();
+    return Number.isInteger(status) && status >= 400 && status < 600
+      ? status
+      : undefined;
   }
   if (typeof exception === 'object' && exception !== null) {
     const { expose, type, statusCode } = exception as Record<string, unknown>;

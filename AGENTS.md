@@ -55,6 +55,14 @@ docker compose -f compose.dev.yaml exec api pnpm start:dev
 
 O `--wait` segura o primeiro comando até os quatro serviços ficarem prontos, o que inclui a instalação das dependências e as migrações. Na primeira subida, isso leva alguns minutos. Se ele terminar com erro, veja a causa com `docker compose -f compose.dev.yaml logs api`.
 
+Quando a preparação da API falha (uma migração quebrada, um `.env` incompleto), o contêiner `api` encerra e o `exec` deixa de funcionar nele. Para consertar, rode o comando num contêiner avulso, que não passa pela preparação:
+
+```bash
+docker compose -f compose.dev.yaml run --rm api <comando>
+```
+
+Depois do conserto, suba o ambiente de novo.
+
 Os dois últimos comandos ficam presos ao terminal, então rode cada um num terminal próprio.
 
 - **Web:** responde em `http://localhost:3000`. O `--hostname 0.0.0.0` é necessário para que ela aceite conexões de fora do contêiner.

@@ -32,7 +32,8 @@ export async function createTestApp(
     await app.init();
   } catch (error) {
     // Quem chamou não recebe a aplicação para fechar, então ela é fechada aqui.
-    await app.close();
+    // Uma falha ao fechar não pode esconder o motivo de a subida ter falhado.
+    await app.close().catch(() => undefined);
     throw error;
   }
   return app;

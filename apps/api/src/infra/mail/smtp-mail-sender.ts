@@ -24,7 +24,10 @@ export class SmtpMailSender implements MailSender, OnModuleDestroy {
       dnsTimeout: config.timeoutMs,
       connectionTimeout: config.timeoutMs,
       greetingTimeout: config.timeoutMs,
-      socketTimeout: config.timeoutMs,
+      // A inatividade tem prazo próprio e maior: ele vale durante o envio, para
+      // um servidor lento em responder, e entre um envio e outro, para a
+      // conexão do pool não ser derrubada antes de ser reaproveitada.
+      socketTimeout: config.idleTimeoutMs,
     });
   }
 

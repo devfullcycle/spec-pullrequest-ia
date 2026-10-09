@@ -46,6 +46,7 @@ describe('Variáveis de ambiente na subida', () => {
       smtpUrl: 'smtp://mailpit:1025',
       from: 'Remetente <remetente@example.com>',
       timeoutMs: 10_000,
+      idleTimeoutMs: 60_000,
     });
     const auth = moduleRef.get(authConfig.KEY);
     expect(auth.jwtPrivateKey).toContain('-----BEGIN PRIVATE KEY-----');
@@ -81,6 +82,7 @@ describe('Variáveis de ambiente na subida', () => {
     ['DATABASE_CONNECT_TIMEOUT_MS', 'logo'],
     ['SMTP_TIMEOUT_MS', '0'],
     ['SMTP_TIMEOUT_MS', 'logo'],
+    ['SMTP_IDLE_TIMEOUT_MS', '0'],
     ['JWT_PRIVATE_KEY', 'não é uma chave'],
     ['JWT_PUBLIC_KEY', 'não é uma chave'],
   ])(

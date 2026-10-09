@@ -11,6 +11,7 @@ export interface Env {
   SMTP_URL: string;
   MAIL_FROM: string;
   SMTP_TIMEOUT_MS: number;
+  SMTP_IDLE_TIMEOUT_MS: number;
 }
 
 /**
@@ -94,6 +95,7 @@ export const envSchema = Joi.object<Env>({
     .required(),
   MAIL_FROM: mailSender.required(),
   SMTP_TIMEOUT_MS: Joi.number().integer().min(1).default(10_000),
+  SMTP_IDLE_TIMEOUT_MS: Joi.number().integer().min(1).default(60_000),
 })
   .custom(matchingJwtKeys)
   .messages({

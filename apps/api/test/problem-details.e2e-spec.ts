@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpException,
   INestApplication,
   Logger,
   Post,
@@ -77,6 +78,16 @@ class ProbeController {
     throw new ServiceUnavailableException('fila interna hunter2 fora do ar');
   }
 
+  @Get('redirect-as-exception')
+  redirectAsException() {
+    throw new HttpException('destino interno hunter2', 302);
+  }
+
+  @Get('status-out-of-range')
+  statusOutOfRange() {
+    throw new HttpException('status que veio de outro serviço', 1000);
+  }
+
   @Get('error-after-headers')
   errorAfterHeaders(@Res() response: Response) {
     response.status(200).type('text/plain').write('começo da resposta');
@@ -138,6 +149,24 @@ describe('Formato de erro da API (RFC 9457)', () => {
         expect(error.messages.length).toBeGreaterThan(0);
       }
     });
+
+    it.each([[[1, 2]], [['a']], [[]]])(
+      'aponta um campo em todo erro quando o corpo é %j, e não um objeto',
+      async (body) => {
+        const response = await request(app.getHttpServer())
+          .post('/v1/probe/validated')
+          .send(body)
+          .expect(400);
+
+        expect(response.body.code).toBe('validation_error');
+        const errors = response.body.errors as FieldError[];
+        expect(errors.length).toBeGreaterThan(0);
+        for (const error of errors) {
+          expect(typeof error.field).toBe('string');
+          expect(error.field).not.toContain('undefined');
+        }
+      },
+    );
 
     it('trata um corpo JSON malformado como validation_error', async () => {
       const response = await request(app.getHttpServer())
@@ -223,6 +252,21 @@ describe('Formato de erro da API (RFC 9457)', () => {
         code: 'internal_error',
       });
     });
+
+    it.each(['redirect-as-exception', 'status-out-of-range'])(
+      'trata como inesperada uma HttpException cujo status não é de erro (%s)',
+      async (route) => {
+        const response = await request(app.getHttpServer())
+          .get(`/v1/probe/${route}`)
+          .expect(500);
+
+        expectProblem(response, {
+          title: 'Internal Server Error',
+          status: 500,
+          code: 'internal_error',
+        });
+      },
+    );
 
     it('encerra a conexão quando a falha vem depois de a resposta ter começado', async () => {
       // O log é a única saída que distingue este caso: o cliente só vê a conexão cair.
