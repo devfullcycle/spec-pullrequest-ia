@@ -1,6 +1,6 @@
 ## Estado atual
 
-A fundação está pronta: módulo de config (`src/config/`), banco com Prisma (`prisma/` e `src/infra/database/`), envio de e-mail (`src/infra/mail/`), filtro de erros e validação de entrada (`src/common/`) e a base de testes (`test/support/`). Os módulos de domínio (`src/modules/`) **ainda não existem**, e por isso a API ainda não tem nenhuma rota. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
+A fundação está pronta: módulo de config (`src/config/`), banco com Prisma (`prisma/` e `src/infra/database/`), envio de e-mail (`src/infra/mail/`), filtro de erros e validação de entrada (`src/common/`) e a base de testes (`test/support/`). Dos módulos de domínio (`src/modules/`), existem o `users`, ainda sem rota, e o `auth`, com o cadastro, a verificação de e-mail e o reenvio. Login, Sessão e recuperação de senha **ainda não existem**. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
 
 ## Comandos
 
@@ -23,7 +23,7 @@ docker compose -f compose.dev.yaml exec api <comando>
 | `pnpm format` | Prettier em `src/` e `test/` |
 | `pnpm exec tsc --noEmit` | Checagem de tipos |
 | `pnpm build` | Compila para `dist/` |
-| `pnpm exec prisma migrate dev --name <nome>` | Cria uma migração a partir do `prisma/schema.prisma` e a aplica no banco local |
+| `pnpm exec prisma migrate dev --name <nome>` | Cria uma migração a partir do `prisma/schema.prisma` e a aplica no banco local. Não gera o cliente. |
 | `pnpm exec prisma generate` | Gera de novo o cliente do Prisma, depois de mudar o schema |
 | `pnpm setup:dev` | Prepara o ambiente: `.env`, chaves do JWT, cliente do Prisma e migrações. Já roda sozinho quando o contêiner sobe. |
 
@@ -39,7 +39,7 @@ O `pnpm lint` só aponta os problemas, sem corrigir. A formatação é conferida
 - **Vitest:** `describe`, `it`, `expect` e `vi` são globais, sem import. Os mocks usam `vi.fn()` e `vi.mock()`.
 - **oxlint:** as regras ficam no `.oxlintrc.json`. `no-floating-promises` é erro, então toda promise precisa de `await`, `return` ou `void`.
 - **TypeScript:** `strict` ligado, com `strictPropertyInitialization` desligado para os DTOs e as classes com decorators.
-- **Prisma:** a versão é a 7, fixada no `package.json` (o motivo está na seção 1 do LLD). O cliente é gerado em `src/generated/prisma/`, que fica fora do Git, do lint e do Prettier, e é importado de `generated/prisma/client.js`. A URL do banco fica no `prisma.config.ts`, e não no schema. Depois de mudar o `schema.prisma`, crie a migração com `prisma migrate dev`, que também gera o cliente de novo.
+- **Prisma:** a versão é a 7, fixada no `package.json` (o motivo está na seção 1 do LLD). O cliente é gerado em `src/generated/prisma/`, que fica fora do Git, do lint e do Prettier, e é importado de `generated/prisma/client.js`. A URL do banco fica no `prisma.config.ts`, e não no schema. Depois de mudar o `schema.prisma`, crie a migração com `prisma migrate dev` e gere o cliente com `prisma generate`: no Prisma 7, a migração não gera mais o cliente.
 - **`PrismaService`:** é o cliente do banco, global, em `src/infra/database/`. Só os repositories o injetam.
 - **pnpm:** os pacotes que rodam script na instalação precisam estar liberados no `pnpm-workspace.yaml` (`allowBuilds`). Sem isso, a instalação falha.
 
@@ -82,7 +82,7 @@ As suítes de integração e de ponta a ponta usam a base de `test/support/`. N�
 
 - **Banco de testes:** é um banco separado no mesmo PostgreSQL, com o nome do banco de `DATABASE_URL` mais o sufixo `_test`. Ele é criado e migrado sozinho no começo de cada execução da suíte, e todas as tabelas são esvaziadas antes de cada arquivo de teste. Por dividirem esse banco, os arquivos rodam um por vez.
 - **Aplicação:** um teste de ponta a ponta sobe a aplicação inteira com `createTestApp()`, que aplica a mesma configuração do `main.ts`, e fala com ela só por HTTP, com `supertest`. No fim, fecha com `app.close()`.
-- **E-mail:** os testes leem o que foi enviado pela API HTTP do Mailpit, com `waitForMailTo()`. Cada teste usa um destinatário próprio, de `uniqueEmail()`, e acha os e-mails por ele. A caixa do Mailpit nunca é apagada, porque ela também serve ao desenvolvimento. Quando o teste provoca mais de um e-mail para o mesmo destinatário (reenvio, redefinição de senha), ele espera o seguinte com `waitForMailTo(endereço, { count: 2 })`. Sem o `count`, a espera termina no primeiro e-mail que já existir.
+- **E-mail:** os testes leem o que foi enviado pela API HTTP do Mailpit, com `waitForMailTo()`. Cada teste usa um destinatário próprio, de `uniqueEmail()`, e acha os e-mails por ele. A caixa do Mailpit nunca é apagada, porque ela também serve ao desenvolvimento. Quando o teste provoca mais de um e-mail para o mesmo destinatário (reenvio, redefinição de senha), ele espera o seguinte com `waitForMailTo(endereço, { count: 2 })`. Sem o `count`, a espera termina no primeiro e-mail que já existir. Para provar que um envio **não** aconteceu, o teste provoca em seguida um envio que conhece, espera por ele e confere o total com `countMailTo()`.
 - **Prazos:** são testados reduzindo a variável de ambiente no teste, com `vi.stubEnv` antes de `createTestApp()`, sem relógio falso dentro dos services. O valor trocado passa pelo schema: se for inválido, a aplicação do teste não sobe. O Vitest desfaz a troca sozinho no fim de cada teste (`unstubEnvs`), sem `vi.unstubAllEnvs()` à mão.
 - **Configuração no teste:** um teste que precisa de um valor de configuração o pega da configuração injetada (`app.get(mailConfig.KEY)`), e não de `process.env`.
 - **Rota só de teste:** para provar um comportamento da fundação que nenhuma rota de negócio exercita, o teste declara um controller próprio e o passa em `createTestApp({ controllers })`. Ele não entra na aplicação real.

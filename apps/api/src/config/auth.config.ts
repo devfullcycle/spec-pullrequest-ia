@@ -7,5 +7,7 @@ export const authConfig = registerAs('auth', () => {
     /** Par de chaves RS256 do token de acesso, em PEM. */
     jwtPrivateKey: env.JWT_PRIVATE_KEY,
     jwtPublicKey: env.JWT_PUBLIC_KEY,
+    /** Validade do link de verificação de e-mail. */
+    emailVerificationTtlSeconds: env.EMAIL_VERIFICATION_TTL_SECONDS,
   };
 });

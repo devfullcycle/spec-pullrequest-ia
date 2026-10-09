@@ -1,7 +1,9 @@
 // Prepara o `.env` do ambiente local na subida do contêiner da API.
 //
 // 1. Se o `.env` não existe, ele nasce como cópia do `.env.example`.
-// 2. Se faltam as chaves do JWT, um par RS256 é gerado e gravado no `.env`.
+// 2. Se o `.env` já existe e não tem uma variável do `.env.example`, ela é acrescentada.
+//    É o caso de um `.env` criado antes de a variável existir.
+// 3. Se faltam as chaves do JWT, um par RS256 é gerado e gravado no `.env`.
 //
 // O script pode rodar quantas vezes for: ele nunca troca um valor que já existe.
 import { generateKeyPairSync } from 'node:crypto';
@@ -14,6 +16,26 @@ const examplePath = new URL('../.env.example', import.meta.url);
 if (!existsSync(envPath)) {
   copyFileSync(examplePath, envPath);
   console.log('setup-env: .env criado a partir do .env.example');
+}
+
+const existing = parseEnv(readFileSync(envPath, 'utf8'));
+const missing = Object.entries(
+  parseEnv(readFileSync(examplePath, 'utf8')),
+).filter(([name]) => !(name in existing));
+
+if (missing.length > 0) {
+  appendFileSync(
+    envPath,
+    [
+      '',
+      '# Variáveis que o .env.example ganhou depois de este arquivo ser criado.',
+      ...missing.map(([name, value]) => `${name}=${JSON.stringify(value)}`),
+      '',
+    ].join('\n'),
+  );
+  console.log(
+    `setup-env: ${missing.map(([name]) => name).join(', ')} acrescentada(s) ao .env`,
+  );
 }
 
 const current = parseEnv(readFileSync(envPath, 'utf8'));
