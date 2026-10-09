@@ -403,6 +403,8 @@ O arquivo do Figma espelha este documento com os mesmos nomes. Nenhuma camada us
 
 O Figma é a ferramenta de design do projeto, acessada pelo servidor MCP do plugin `figma`. Este documento governa as duas pontas: o que é desenhado no Figma e o que é implementado no código. As regras abaixo valem para qualquer tarefa de interface.
 
+**Arquivo do Figma:** a URL está no `AGENTS.md` da raiz, na seção "Design e Figma".
+
 ### Sincronia
 
 - Doc, Figma e código usam os mesmos nomes e os mesmos valores. O mapeamento está nas seções "Tokens no Tailwind" e "Tokens no Figma".
