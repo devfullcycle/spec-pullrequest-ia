@@ -63,7 +63,15 @@ export class RegistrationService {
     if (!userId) {
       throw new InvalidTokenError();
     }
-    await this.users.markEmailVerified(userId);
+    try {
+      await this.users.markEmailVerified(userId);
+    } catch (error) {
+      // O token já foi gasto e o Usuário não ficou verificado. Sem devolver o
+      // token, o link deixaria de valer por uma falha que não é da pessoa. Se
+      // a devolução também falhar, resta a ela pedir o reenvio.
+      await this.emailTokens.release(token, 'verify_email').catch(() => {});
+      throw error;
+    }
   }
 
   private async sendVerification(user: User): Promise<void> {

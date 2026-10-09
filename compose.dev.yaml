@@ -12,6 +12,8 @@ services:
     environment:
       # A web chama a API sempre pelo servidor, pelo nome do serviço.
       API_URL: http://api:3000
+      # O ambiente local usa HTTP, e o navegador descartaria um cookie `Secure`.
+      COOKIE_SECURE: "false"
     healthcheck:
       # O arquivo é criado quando a instalação das dependências termina.
       test: ["CMD", "test", "-f", "/tmp/web-ready"]

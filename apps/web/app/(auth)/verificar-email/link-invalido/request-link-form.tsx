@@ -5,9 +5,9 @@ import { Banner } from "@/components/ui/banner";
 import { ButtonPrimary } from "@/components/ui/button-primary";
 import { TextField } from "@/components/ui/text-field";
 import { requestVerificationLink } from "../../actions";
-import type { ResendFormState } from "../../form-state";
+import type { RequestLinkFormState } from "../../form-state";
 
-const INITIAL_STATE: ResendFormState = {};
+const INITIAL_STATE: RequestLinkFormState = {};
 
 export function RequestLinkForm() {
   const [state, action, pending] = useActionState(

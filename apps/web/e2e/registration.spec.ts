@@ -32,6 +32,8 @@ test("o visitante se cadastra, verifica o e-mail pelo link e chega à tela de en
     page.getByRole("heading", { name: "Confira seu e-mail" }),
   ).toBeVisible();
   await expect(page.getByText(email)).toBeVisible();
+  // O endereço não vai para a URL, que fica no histórico e nos logs.
+  await expect(page).toHaveURL(/\/confira-seu-email$/);
 
   await openVerificationLink(page, email);
 
@@ -143,4 +145,18 @@ test("o link sem token mostra a tela de link inválido", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Link inválido ou expirado" }),
   ).toBeVisible();
+});
+
+test("a tela de confirmação aberta sem um cadastro antes não oferece o reenvio", async ({
+  page,
+}) => {
+  await page.goto("/confira-seu-email?email=alguem%40example.com");
+
+  await expect(
+    page.getByRole("heading", { name: "Confira seu e-mail" }),
+  ).toBeVisible();
+  await expect(page.getByText("alguem@example.com")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Reenviar e-mail" }),
+  ).toHaveCount(0);
 });

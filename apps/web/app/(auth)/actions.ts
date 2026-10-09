@@ -5,7 +5,15 @@ import { z } from "zod";
 import * as authApi from "@/lib/api/auth";
 import { errorMessage } from "@/lib/api/error-messages";
 import type { ApiError } from "@/lib/api/types";
-import type { RegisterFormState, ResendFormState } from "./form-state";
+import type {
+  RegisterFormState,
+  RequestLinkFormState,
+  ResendFormState,
+} from "./form-state";
+import {
+  pendingVerificationEmail,
+  rememberPendingVerification,
+} from "./pending-verification";
 
 const INVALID_EMAIL = "Informe um e-mail válido, como nome@exemplo.com.";
 const INVALID_PASSWORD = "A senha precisa ter de 10 a 128 caracteres.";
@@ -23,6 +31,8 @@ const registerSchema = z.object({
 const resendSchema = z.object({ email });
 
 /** As mensagens da API são para quem desenvolve: a web escreve a própria, por campo. */
+const CHECK_YOUR_EMAIL_PATH = "/confira-seu-email";
+
 const API_FIELD_MESSAGES = { email: INVALID_EMAIL, password: INVALID_PASSWORD };
 
 export async function register(
@@ -42,26 +52,15 @@ export async function register(
   if (!result.ok) {
     return { ...apiFailure(result.error), email: typedEmail };
   }
-  redirect(checkYourEmailPath(parsed.data.email));
+  await rememberPendingVerification(parsed.data.email);
+  redirect(CHECK_YOUR_EMAIL_PATH);
 }
 
 /** O formulário da tela de link inválido: pede outro link e leva à tela "confira seu e-mail". */
 export async function requestVerificationLink(
-  previous: ResendFormState,
+  _previous: RequestLinkFormState,
   formData: FormData,
-): Promise<ResendFormState> {
-  const state = await resendVerification(previous, formData);
-  if (state.sent) {
-    redirect(checkYourEmailPath(state.email));
-  }
-  return state;
-}
-
-/** O "Reenviar e-mail" da tela "confira seu e-mail": a pessoa continua nela. */
-export async function resendVerification(
-  _previous: ResendFormState,
-  formData: FormData,
-): Promise<ResendFormState> {
+): Promise<RequestLinkFormState> {
   const typedEmail = text(formData.get("email"));
   const parsed = resendSchema.safeParse({ email: typedEmail });
   if (!parsed.success) {
@@ -72,11 +71,24 @@ export async function resendVerification(
   if (!result.ok) {
     return { ...apiFailure(result.error), email: typedEmail };
   }
-  return { sent: true, email: parsed.data.email };
+  await rememberPendingVerification(parsed.data.email);
+  redirect(CHECK_YOUR_EMAIL_PATH);
 }
 
-function checkYourEmailPath(address: string): string {
-  return `/confira-seu-email?${new URLSearchParams({ email: address })}`;
+/**
+ * O "Reenviar e-mail" da tela "confira seu e-mail": a pessoa continua nela. O destinatário é o
+ * do cookie gravado pelo cadastro, e nunca um valor vindo do formulário.
+ */
+export async function resendVerification(): Promise<ResendFormState> {
+  const email = await pendingVerificationEmail();
+  if (!email) {
+    return { error: "Não foi possível reenviar. Faça o cadastro de novo." };
+  }
+
+  const result = await authApi.resendVerification({ email });
+  return result.ok
+    ? { sent: true }
+    : { error: errorMessage(result.error.code) };
 }
 
 function text(value: FormDataEntryValue | null): string {

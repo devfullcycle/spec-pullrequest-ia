@@ -505,6 +505,8 @@ O cadastro nunca revela se um e-mail já tem usuário. A resposta é sempre 201,
 - Usuário não verificado não entra: o login responde `email_not_verified`. Não há Sessão limitada.
 - Verificar não abre Sessão. O usuário é levado ao login, com um aviso de sucesso.
 - O reenvio emite um novo token e invalida o anterior.
+- Depois do cadastro ou do pedido de outro link, a web guarda o e-mail num cookie `HttpOnly` de uma hora, restrito à tela "confira seu e-mail", para mostrá-lo e reenviar a verificação. O endereço não vai para a URL.
+- Se a verificação falha depois de o token ser gasto, a API devolve o token, e o mesmo link volta a valer.
 - O link do e-mail aponta para a web, que gasta o token na API e leva a pessoa ao login. Um link inválido, expirado ou já usado leva à tela de link inválido, de onde ela pede outro.
 
 **Redefinição de senha**
@@ -598,7 +600,7 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 
 **Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM`, `SMTP_TIMEOUT_MS`, `SMTP_IDLE_TIMEOUT_MS`, `DATABASE_CONNECT_TIMEOUT_MS`, `WEB_ORIGIN` e `EMAIL_VERIFICATION_TTL_SECONDS`, e todas, menos `PORT` e os quatro prazos, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, que não pode ser lida, ou uma pública que não é o par da privada, impede a subida. O `MAIL_FROM` tem de trazer um endereço de e-mail, sozinho ou como `Nome <endereço>`. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
 
-**Ambiente local:** as variáveis da API ficam em `apps/api/.env`, fora do Git. Na primeira subida, o contêiner da API cria esse arquivo como cópia do `apps/api/.env.example`, que é versionado e funciona sem alterações, e um script gera as chaves do JWT e as grava nele. Quando o `.env.example` ganha uma variável, o mesmo script a acrescenta ao `.env` que já existe, sem trocar nenhum valor. Os hosts são sempre os nomes dos serviços do Compose. A `API_URL` da web é definida no próprio `compose.dev.yaml`, sem arquivo `.env`.
+**Ambiente local:** as variáveis da API ficam em `apps/api/.env`, fora do Git. Na primeira subida, o contêiner da API cria esse arquivo como cópia do `apps/api/.env.example`, que é versionado e funciona sem alterações, e um script gera as chaves do JWT e as grava nele. Quando o `.env.example` ganha uma variável, o mesmo script a acrescenta ao `.env` que já existe, sem trocar nenhum valor. Os hosts são sempre os nomes dos serviços do Compose. A `API_URL` e o `COOKIE_SECURE=false` da web são definidos no próprio `compose.dev.yaml`, sem arquivo `.env`.
 
 **Banco de testes:** os testes da API usam um banco separado no mesmo PostgreSQL, com o nome do banco de `DATABASE_URL` mais o sufixo `_test`. Ele não tem variável própria.
 

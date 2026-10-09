@@ -9,12 +9,14 @@ export interface RegisterFormState {
   email?: string;
 }
 
-export type ResendFormState =
-  | {
-      sent?: false;
-      fieldErrors?: { email?: string };
-      formError?: string;
-      email?: string;
-    }
+export interface RequestLinkFormState {
+  fieldErrors?: { email?: string };
+  formError?: string;
+  email?: string;
+}
+
+export interface ResendFormState {
   /** O pedido foi aceito. A API responde igual exista ou não o Usuário. */
-  | { sent: true; email: string; fieldErrors?: never; formError?: never };
+  sent?: boolean;
+  error?: string;
+}

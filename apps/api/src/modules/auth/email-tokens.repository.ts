@@ -49,4 +49,12 @@ export class EmailTokensRepository {
     });
     return used[0]?.userId ?? null;
   }
+
+  /** Desfaz o uso de um token, que volta a valer até expirar. */
+  async release(tokenHash: string, type: EmailTokenType): Promise<void> {
+    await this.prisma.emailToken.updateMany({
+      where: { tokenHash, type },
+      data: { usedAt: null },
+    });
+  }
 }

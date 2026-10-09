@@ -8,13 +8,12 @@ import type { ResendFormState } from "../form-state";
 
 const INITIAL_STATE: ResendFormState = {};
 
-/** O aviso do reenvio e os links da tela. Sem o e-mail, não há para quem reenviar. */
-export function ResendVerification({ email }: { email?: string }) {
+/** O aviso do reenvio e os links da tela. Sem um cadastro recente, não há para quem reenviar. */
+export function ResendVerification({ canResend }: { canResend: boolean }) {
   const [state, action, pending] = useActionState(
     resendVerification,
     INITIAL_STATE,
   );
-  const error = state.formError ?? state.fieldErrors?.email;
 
   return (
     <>
@@ -23,15 +22,14 @@ export function ResendVerification({ email }: { email?: string }) {
           Enviamos um novo link. Confira sua caixa de entrada.
         </Banner>
       )}
-      {error && (
+      {state.error && (
         <Banner variant="error" layout="narrow">
-          {error}
+          {state.error}
         </Banner>
       )}
       <div className="flex flex-col items-center gap-2">
-        {email && (
+        {canResend && (
           <form action={action} className="flex gap-1">
-            <input type="hidden" name="email" value={email} />
             <p className="text-body text-ink-muted">Não recebeu?</p>
             <TextLink type="submit" disabled={pending}>
               Reenviar e-mail

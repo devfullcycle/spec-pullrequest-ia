@@ -1,20 +1,13 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AuthCard } from "@/components/auth/auth-card";
+import { pendingVerificationEmail } from "../pending-verification";
 import { ResendVerification } from "./resend-verification";
 
 export const metadata: Metadata = { title: "Confira seu e-mail" };
 
-type SearchParams = PageProps<"/confira-seu-email">["searchParams"];
-
-/** O e-mail vem na URL, posto pelo cadastro ou pelo pedido de novo link. */
-async function emailFrom(searchParams: SearchParams): Promise<string | undefined> {
-  const { email } = await searchParams;
-  return typeof email === "string" && email ? email : undefined;
-}
-
-async function Support({ searchParams }: { searchParams: SearchParams }) {
-  const email = await emailFrom(searchParams);
+async function Support() {
+  const email = await pendingVerificationEmail();
   return (
     <>
       Enviamos um link de verificação para {email ?? "o seu e-mail"}. Abra o
@@ -23,24 +16,22 @@ async function Support({ searchParams }: { searchParams: SearchParams }) {
   );
 }
 
-async function Actions({ searchParams }: { searchParams: SearchParams }) {
-  return <ResendVerification email={await emailFrom(searchParams)} />;
+async function Actions() {
+  return <ResendVerification canResend={!!(await pendingVerificationEmail())} />;
 }
 
-export default function CheckYourEmailPage({
-  searchParams,
-}: PageProps<"/confira-seu-email">) {
+export default function CheckYourEmailPage() {
   return (
     <AuthCard
       title="Confira seu e-mail"
       support={
         <Suspense>
-          <Support searchParams={searchParams} />
+          <Support />
         </Suspense>
       }
     >
       <Suspense>
-        <Actions searchParams={searchParams} />
+        <Actions />
       </Suspense>
     </AuthCard>
   );

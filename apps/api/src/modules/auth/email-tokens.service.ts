@@ -39,6 +39,14 @@ export class EmailTokensService {
   use(token: string, type: EmailTokenType): Promise<string | null> {
     return this.tokens.use(hash(token), type, new Date());
   }
+
+  /**
+   * Devolve um token gasto por `use` quando o que ele autorizava não pôde ser
+   * concluído, para a pessoa poder abrir o mesmo link de novo.
+   */
+  release(token: string, type: EmailTokenType): Promise<void> {
+    return this.tokens.release(hash(token), type);
+  }
 }
 
 function hash(token: string): string {
