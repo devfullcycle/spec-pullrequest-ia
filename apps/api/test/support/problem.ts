@@ -20,3 +20,14 @@ export function expectProblem(
   );
   expect(response.body).toEqual({ type: 'about:blank', ...expected });
 }
+
+/** Confere que a resposta é o `validation_error` de um único campo recusado. */
+export function expectValidationError(response: Response, field: string): void {
+  expectProblem(response, {
+    title: 'Bad Request',
+    status: 400,
+    code: 'validation_error',
+    detail: expect.any(String),
+    errors: [{ field, messages: expect.any(Array) }],
+  });
+}

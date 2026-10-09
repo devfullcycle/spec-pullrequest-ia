@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 import { EmailTokenType } from './email-token-type.js';
 import { EmailTokensRepository } from './email-tokens.repository.js';
+import { InvalidTokenError } from './errors/invalid-token.error.js';
 import { generateOpaqueToken, hashOpaqueToken } from './opaque-token.js';
 
 /**
@@ -33,18 +34,27 @@ export class EmailTokensService {
   }
 
   /**
-   * Gasta o token e devolve o id do Usuário dele, ou `null` se o token não
-   * existe, expirou ou já foi usado.
+   * Gasta o token e roda `effect`, o que ele autoriza, com o id do Usuário
+   * dele. Um token que não existe, expirou ou já foi usado lança
+   * `InvalidTokenError`. Se `effect` falha, o token é devolvido: sem isso, o
+   * link deixaria de valer por uma falha que não é da pessoa. Se a devolução
+   * também falhar, resta a ela pedir outro link.
    */
-  use(token: string, type: EmailTokenType): Promise<string | null> {
-    return this.tokens.use(hashOpaqueToken(token), type, new Date());
-  }
-
-  /**
-   * Devolve um token gasto por `use` quando o que ele autorizava não pôde ser
-   * concluído, para a pessoa poder abrir o mesmo link de novo.
-   */
-  release(token: string, type: EmailTokenType): Promise<void> {
-    return this.tokens.release(hashOpaqueToken(token), type);
+  async redeem<T>(
+    token: string,
+    type: EmailTokenType,
+    effect: (userId: string) => Promise<T>,
+  ): Promise<T> {
+    const tokenHash = hashOpaqueToken(token);
+    const userId = await this.tokens.use(tokenHash, type, new Date());
+    if (!userId) {
+      throw new InvalidTokenError();
+    }
+    try {
+      return await effect(userId);
+    } catch (error) {
+      await this.tokens.release(tokenHash, type).catch(() => {});
+      throw error;
+    }
   }
 }

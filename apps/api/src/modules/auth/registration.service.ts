@@ -5,7 +5,6 @@ import { User } from '../users/entities/user.entity.js';
 import { UsersService } from '../users/users.service.js';
 import { AuthMailerService } from './auth-mailer.service.js';
 import { EmailTokensService } from './email-tokens.service.js';
-import { InvalidTokenError } from './errors/invalid-token.error.js';
 import { PasswordService } from './password.service.js';
 
 /** Cadastro e verificação de e-mail (seção 4.7 do docs/lld.md). */
@@ -59,19 +58,9 @@ export class RegistrationService {
 
   /** Verificar não abre Sessão: a pessoa ainda tem de entrar com a senha. */
   async verifyEmail(token: string): Promise<void> {
-    const userId = await this.emailTokens.use(token, 'verify_email');
-    if (!userId) {
-      throw new InvalidTokenError();
-    }
-    try {
-      await this.users.markEmailVerified(userId);
-    } catch (error) {
-      // O token já foi gasto e o Usuário não ficou verificado. Sem devolver o
-      // token, o link deixaria de valer por uma falha que não é da pessoa. Se
-      // a devolução também falhar, resta a ela pedir o reenvio.
-      await this.emailTokens.release(token, 'verify_email').catch(() => {});
-      throw error;
-    }
+    await this.emailTokens.redeem(token, 'verify_email', (userId) =>
+      this.users.markEmailVerified(userId),
+    );
   }
 
   private async sendVerification(user: User): Promise<void> {

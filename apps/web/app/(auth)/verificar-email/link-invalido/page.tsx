@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AuthCard } from "@/components/auth/auth-card";
 import { TextLink } from "@/components/ui/text-link";
-import { RequestLinkForm } from "./request-link-form";
+import { requestVerificationLink } from "../../actions";
+import { RequestLinkForm } from "../../request-link-form";
 
 export const metadata: Metadata = { title: "Link inválido ou expirado" };
 
@@ -27,7 +28,10 @@ async function Card({ searchParams }: Props) {
 
   return (
     <AuthCard title={title} support={support}>
-      <RequestLinkForm />
+      <RequestLinkForm
+        action={requestVerificationLink}
+        submitLabel="Enviar novo link"
+      />
       <div className="flex flex-col items-center gap-2">
         <TextLink href="/entrar">Voltar para Entrar</TextLink>
       </div>

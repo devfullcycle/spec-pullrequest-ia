@@ -76,6 +76,31 @@ export class UsersRepository {
     return count > 0;
   }
 
+  /**
+   * Troca a senha e marca o e-mail como verificado, sem mexer na data de quem
+   * já estava. É um comando só, para as duas gravações valerem juntas: uma
+   * senha nova num Usuário que continuasse sem verificação não serviria para
+   * entrar. Devolve `null` se o Usuário não existe.
+   */
+  async resetPassword(
+    id: string,
+    passwordHash: string,
+    now: Date,
+  ): Promise<User | null> {
+    const changed = await this.prisma.$queryRaw<User[]>`
+      UPDATE users
+      SET password_hash = ${passwordHash},
+          email_verified_at = COALESCE(email_verified_at, ${now}),
+          updated_at = ${now}
+      WHERE id = ${id}::uuid
+      RETURNING
+        id,
+        email::text AS email,
+        password_hash AS "passwordHash",
+        email_verified_at AS "emailVerifiedAt"`;
+    return changed[0] ?? null;
+  }
+
   /** Não mexe na data de um Usuário que já estava verificado. */
   async markEmailVerified(id: string, verifiedAt: Date): Promise<void> {
     await this.prisma.user.updateMany({

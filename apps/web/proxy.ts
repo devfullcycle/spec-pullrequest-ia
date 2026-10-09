@@ -30,8 +30,6 @@ const AUTH_PATHS = [
   LOGIN_PATH,
   "/criar-conta",
   "/confira-seu-email",
-  // A tela chega com a recuperação de senha. O link da tela de entrar já aponta para cá.
-  "/esqueci-minha-senha",
 ];
 
 /**
@@ -41,8 +39,12 @@ const AUTH_PATHS = [
 const PUBLIC_PATHS = [
   "/termos",
   "/privacidade",
-  // O link do e-mail vale para quem já entrou em outra aba.
+  // Os links dos e-mails valem para quem já entrou em outra aba.
   "/verificar-email",
+  "/redefinir-senha",
+  // Quem tem Sessão também pede o link: é para cá que a tela de link inválido e o e-mail
+  // "sua senha foi alterada" mandam.
+  "/esqueci-minha-senha",
   SESSION_ENDED_PATH,
   // Só existe no servidor de desenvolvimento.
   "/vitrine",

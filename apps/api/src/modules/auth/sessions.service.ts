@@ -105,6 +105,11 @@ export class SessionsService {
     return this.refreshTokens.deleteSessionOf(hashOpaqueToken(refreshToken));
   }
 
+  /** Encerra todas as Sessões do Usuário, em todos os navegadores. */
+  logoutAll(userId: string): Promise<void> {
+    return this.refreshTokens.deleteAllOfUser(userId);
+  }
+
   private refreshTokenExpiry(): Date {
     return new Date(Date.now() + this.config.refreshTokenTtlSeconds * 1000);
   }

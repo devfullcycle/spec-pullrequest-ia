@@ -9,6 +9,8 @@ export const authConfig = registerAs('auth', () => {
     jwtPublicKey: env.JWT_PUBLIC_KEY,
     /** Validade do link de verificação de e-mail. */
     emailVerificationTtlSeconds: env.EMAIL_VERIFICATION_TTL_SECONDS,
+    /** Validade do link de redefinição de senha. */
+    passwordResetTtlSeconds: env.PASSWORD_RESET_TTL_SECONDS,
     /** Validade do token de acesso. */
     accessTokenTtlSeconds: env.ACCESS_TOKEN_TTL_SECONDS,
     /** Validade do token de renovação. */

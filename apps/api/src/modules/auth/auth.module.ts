@@ -6,6 +6,7 @@ import { AuthMailerService } from './auth-mailer.service.js';
 import { AuthController } from './auth.controller.js';
 import { EmailTokensRepository } from './email-tokens.repository.js';
 import { EmailTokensService } from './email-tokens.service.js';
+import { PasswordRecoveryService } from './password-recovery.service.js';
 import { PasswordService } from './password.service.js';
 import { RefreshTokensRepository } from './refresh-tokens.repository.js';
 import { RegistrationService } from './registration.service.js';
@@ -17,6 +18,7 @@ import { SessionsService } from './sessions.service.js';
   providers: [
     RegistrationService,
     SessionsService,
+    PasswordRecoveryService,
     RefreshTokensRepository,
     PasswordService,
     EmailTokensService,

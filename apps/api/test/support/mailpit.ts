@@ -86,6 +86,24 @@ export async function readAllMailTo(address: string): Promise<CapturedMail[]> {
   return Promise.all(messages.map(({ ID }) => readMail(ID)));
 }
 
+/**
+ * O link do e-mail para o caminho `path` (`/verificar-email`, por exemplo).
+ * Falha se o e-mail não tiver exatamente um, para o teste não seguir o link
+ * errado.
+ */
+export function extractLink(mail: CapturedMail, path: string): URL {
+  const links = (mail.text.match(/https?:\/\/[^\s<>"')]+/g) ?? [])
+    // A pontuação que fecha a frase não faz parte do link.
+    .map((link) => new URL(link.replace(/[.,;:!?]+$/, '')))
+    .filter((link) => link.pathname === path);
+  if (links.length !== 1) {
+    throw new Error(
+      `O e-mail "${mail.subject}" tem ${links.length} link(s) para ${path}, e o teste esperava 1.`,
+    );
+  }
+  return links[0];
+}
+
 /** Os e-mails que o endereço recebeu, do mais novo para o mais antigo. */
 async function searchMailTo(address: string): Promise<{ ID: string }[]> {
   const query = encodeURIComponent(`to:"${address}"`);

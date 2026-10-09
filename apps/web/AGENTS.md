@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Estado atual
 
-A base está pronta: os tokens do design system no `app/globals.css`, os componentes que a autenticação usa (`components/ui/` e `components/auth/`), o cliente da API (`lib/api/`), a vitrine (`app/vitrine/`) e os testes no navegador (`e2e/`). Das telas, existem as do cadastro, da verificação de e-mail e a de entrar, em `app/(auth)/`, e a página inicial provisória, em `app/(drive)/`, que mostra o e-mail do Usuário e o botão "Sair". A guarda dos cookies de token (`lib/session`), a camada de acesso a dados (`lib/dal`) e o `proxy.ts` existem, e o Proxy renova a Sessão quando o token de acesso expira. A recuperação de senha **ainda não existe**. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
+A base está pronta: os tokens do design system no `app/globals.css`, os componentes que a autenticação usa (`components/ui/` e `components/auth/`), o cliente da API (`lib/api/`), a vitrine (`app/vitrine/`) e os testes no navegador (`e2e/`). Das telas, existem as do cadastro, da verificação de e-mail, a de entrar e as da recuperação de senha, em `app/(auth)/`, e a página inicial provisória, em `app/(drive)/`, que mostra o e-mail do Usuário e o botão "Sair". A guarda dos cookies de token (`lib/session`), a camada de acesso a dados (`lib/dal`) e o `proxy.ts` existem, e o Proxy renova a Sessão quando o token de acesso expira. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
 
 ## Comandos
 
@@ -126,12 +126,14 @@ A exceção conhecida é o upload: o navegador envia os chunks direto ao Cloud S
 - **Token de acesso expirado:** o teste não espera os 15 minutos. Ele apaga o cookie do token de acesso, que é o que o navegador faz quando o token expira, e deixa o de renovação.
 - **E-mails:** `e2e/support/mailpit.ts` lê os e-mails pelo Mailpit. `uniqueEmail()` cria um destinatário que nenhum outro teste usa, `waitForMailTo()` espera o e-mail chegar e `extractLink()` tira dele o link de um caminho. Nenhum teste apaga a caixa do Mailpit, que também serve ao desenvolvimento.
 - **Seletores:** pelo papel e pelo nome acessível (`getByRole`, `getByLabel`), que é como o Usuário acha o elemento. `data-testid` fica para o que não tem papel nem rótulo.
+- **Depois de navegar por um link, prefira `getByRole`.** O Next.js mantém a tela anterior escondida na página, e `getByLabel` acha também os campos dela. `getByRole` ignora o que está escondido.
 
 ## Formulários e textos
 
 - **Formulários:** Server Actions com `useActionState`. A validação é feita com zod na Server Action, e o resultado volta como estado do formulário. A validação no navegador é só conforto.
-- **Onde ficam:** o formulário é um componente de cliente ao lado da página que o usa (`app/(auth)/criar-conta/register-form.tsx`). As Server Actions de um grupo de rotas ficam num `actions.ts` na pasta do grupo, e o estado que elas devolvem, num `form-state.ts` ao lado.
+- **Onde ficam:** o formulário é um componente de cliente ao lado da página que o usa (`app/(auth)/criar-conta/register-form.tsx`). As Server Actions de um grupo de rotas ficam num `actions.ts` na pasta do grupo, e o estado que elas devolvem, num `form-state.ts` ao lado. Um formulário que mais de uma tela do grupo usa fica na pasta do grupo e recebe a Server Action por prop (`app/(auth)/request-link-form.tsx`).
 - **O que vem da URL entra no formulário por props.** O aviso de outro fluxo e o campo oculto do destino são Server Components dentro de `<Suspense>`, passados ao formulário como props. Um formulário inteiro dentro de `<Suspense>` seria trocado quando a URL fosse lida, e a pessoa perderia o que já digitou.
+- **Valor da URL sem o qual o envio não vale:** o formulário só é renderizado depois de o valor ser lido, dentro de um `<Suspense>` sem fallback, e o recebe como prop. É o caso do token da tela de nova senha. Um campo oculto que chega depois dos outros pode ficar de fora de um envio rápido, o que só é aceitável para um valor opcional, como o destino de retorno.
 - **Erro junto ao campo:** o formulário leva `noValidate`, para o erro aparecer no campo, com o texto da web, e não no balão do navegador. A senha nunca volta no estado do formulário.
 - **Erros da API:** a API responde com um `code` estável. O cliente de `lib/api` devolve o erro esperado como valor (`{ ok: false, error }`), e não como exceção. A web traduz o `code` em mensagem num único mapa, o de `lib/api/error-messages.ts`, e nenhum componente mostra a mensagem crua da API.
 - **Textos:** só em português, escritos nos componentes, sem biblioteca de tradução.

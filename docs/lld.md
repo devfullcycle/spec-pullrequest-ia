@@ -515,9 +515,17 @@ O cadastro nunca revela se um e-mail já tem usuário. A resposta é sempre 201,
 
 **Redefinição de senha**
 
+- O pedido responde 204 exista ou não o usuário, e só envia o e-mail no primeiro caso. Pedir outro link invalida o anterior.
+- A API responde ao pedido logo depois de buscar o usuário, que custa o mesmo nos dois casos. A gravação do token e o envio do e-mail seguem sem espera, para o tempo de resposta não revelar se o e-mail tem usuário. Uma falha na gravação só é registrada em log, como a de envio.
 - Funciona também para usuário não verificado.
 - Concluir a redefinição marca o e-mail como verificado, porque a pessoa provou que controla a caixa.
-- Encerra todas as Sessões, não abre uma nova e envia o e-mail "sua senha foi alterada".
+- Encerra todas as Sessões, não abre uma nova e envia o e-mail "sua senha foi alterada". As Sessões são encerradas antes de a senha mudar: se a troca falha, a pessoa só precisa entrar de novo, e nunca fica com a senha nova e as Sessões antigas abertas. O token de acesso já emitido continua valendo até expirar, porque a API o valida só pela assinatura.
+- Uma senha nova fora da regra é recusada antes de o token ser gasto, e o mesmo link continua valendo.
+- A tela do pedido (`/esqueci-minha-senha`) abre com ou sem Sessão, porque a tela de link inválido e o e-mail "sua senha foi alterada" levam a ela.
+- Se a redefinição falha depois de o token ser gasto, a API devolve o token, como na verificação de e-mail.
+- O link do e-mail aponta para a tela de nova senha da web (`/redefinir-senha`), que abre com ou sem Sessão. Só a API sabe se o token vale, então um link inválido, expirado ou já usado só é descoberto no envio da senha nova, e leva à tela de link inválido, de onde a pessoa pede outro.
+- Depois do pedido, a web guarda o e-mail num cookie `HttpOnly` de uma hora, restrito à tela de confirmação de envio, para mostrá-lo. A tela diz o mesmo exista ou não o usuário.
+- Concluída a redefinição, a web apaga os cookies de token do navegador e leva à tela de entrar, com o aviso "senha redefinida" (`/entrar?aviso=senha-redefinida`).
 
 **Limite de tentativas**
 
@@ -593,6 +601,7 @@ A retenção da lixeira, o prazo de upload pendente, a validade dos tokens e a t
 | `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS` | api | Validade do token de acesso e do token de renovação, em segundos. Padrões de 900 (15 minutos) e 2592000 (30 dias). |
 | `REFRESH_TOKEN_REUSE_GRACE_SECONDS` | api | Por quanto tempo um token de renovação já trocado ainda é aceito, em segundos. Padrão de 10. Zero desliga a tolerância. |
 | `EMAIL_VERIFICATION_TTL_SECONDS` | api | Validade do link de verificação de e-mail, em segundos. Padrão de 86400 (24 horas). |
+| `PASSWORD_RESET_TTL_SECONDS` | api | Validade do link de redefinição de senha, em segundos. Padrão de 3600 (1 hora). |
 | `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | api | Credenciais do gateway (segredo) |
 | `SMTP_URL`, `MAIL_FROM` | api | Servidor SMTP do serviço de e-mail (segredo) e remetente. No desenvolvimento, aponta para o `mailpit`. |
 | `DATABASE_CONNECT_TIMEOUT_MS` | api | Quanto esperar o banco para abrir uma conexão, em milissegundos. Padrão de 10000. |
@@ -604,7 +613,7 @@ A retenção da lixeira, o prazo de upload pendente, a validade dos tokens e a t
 | `COOKIE_DOMAIN` | web | Domínio dos cookies de token |
 | `COOKIE_SECURE` | web | Padrão `true`. `false` só no desenvolvimento, que usa HTTP. |
 
-**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM`, `SMTP_TIMEOUT_MS`, `SMTP_IDLE_TIMEOUT_MS`, `DATABASE_CONNECT_TIMEOUT_MS`, `WEB_ORIGIN`, `EMAIL_VERIFICATION_TTL_SECONDS`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS` e `REFRESH_TOKEN_REUSE_GRACE_SECONDS`, e todas, menos `PORT`, os quatro prazos, as três validades e a janela de tolerância, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, que não pode ser lida, ou uma pública que não é o par da privada, impede a subida. O `MAIL_FROM` tem de trazer um endereço de e-mail, sozinho ou como `Nome <endereço>`. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
+**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM`, `SMTP_TIMEOUT_MS`, `SMTP_IDLE_TIMEOUT_MS`, `DATABASE_CONNECT_TIMEOUT_MS`, `WEB_ORIGIN`, `EMAIL_VERIFICATION_TTL_SECONDS`, `PASSWORD_RESET_TTL_SECONDS`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS` e `REFRESH_TOKEN_REUSE_GRACE_SECONDS`, e todas, menos `PORT`, os quatro prazos, as quatro validades e a janela de tolerância, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, que não pode ser lida, ou uma pública que não é o par da privada, impede a subida. O `MAIL_FROM` tem de trazer um endereço de e-mail, sozinho ou como `Nome <endereço>`. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
 
 **Ambiente local:** as variáveis da API ficam em `apps/api/.env`, fora do Git. Na primeira subida, o contêiner da API cria esse arquivo como cópia do `apps/api/.env.example`, que é versionado e funciona sem alterações, e um script gera as chaves do JWT e as grava nele. Quando o `.env.example` ganha uma variável, o mesmo script a acrescenta ao `.env` que já existe, sem trocar nenhum valor. Os hosts são sempre os nomes dos serviços do Compose. A `API_URL` e o `COOKIE_SECURE=false` da web são definidos no próprio `compose.dev.yaml`, sem arquivo `.env`.
 

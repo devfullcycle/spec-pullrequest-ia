@@ -111,6 +111,14 @@ export class RefreshTokensRepository {
     });
   }
 
+  /** Apaga os tokens de todas as Sessões do Usuário. */
+  async deleteAllOfUser(userId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await this.lockTokensOf(tx, userId);
+      await tx.refreshToken.deleteMany({ where: { userId } });
+    });
+  }
+
   /**
    * Põe em fila, até o fim da transação, quem troca ou apaga tokens do mesmo
    * Usuário. Sem isso, uma renovação que corre junto com o logout, ou com o

@@ -34,3 +34,8 @@ export interface LoginFormState {
   /** O e-mail digitado volta ao campo. A senha nunca volta. */
   email?: string;
 }
+
+export interface ResetPasswordFormState {
+  fieldErrors?: { password?: string };
+  formError?: string;
+}

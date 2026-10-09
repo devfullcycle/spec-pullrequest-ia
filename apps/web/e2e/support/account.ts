@@ -14,18 +14,24 @@ export async function signUp(page: Page, email: string, password = PASSWORD) {
   ).toBeVisible();
 }
 
-/** Abre o link de verificação do e-mail mais novo, depois de o endereço ter recebido `count`. */
-export async function openVerificationLink(
+/**
+ * Abre o link do e-mail mais novo para o caminho `path`, depois de o endereço ter recebido
+ * `count` e-mails.
+ */
+export async function openMailLink(
   page: Page,
   email: string,
-  count = 1,
+  path: string,
+  count: number,
 ) {
-  const link = extractLink(
-    await waitForMailTo(email, { count }),
-    "/verificar-email",
-  );
+  const link = extractLink(await waitForMailTo(email, { count }), path);
   await page.goto(link.pathname + link.search);
   return link;
+}
+
+/** Abre o link de verificação do e-mail mais novo, depois de o endereço ter recebido `count`. */
+export function openVerificationLink(page: Page, email: string, count = 1) {
+  return openMailLink(page, email, "/verificar-email", count);
 }
 
 /** Deixa o e-mail com um Usuário verificado, pelo mesmo caminho que a pessoa faz. */

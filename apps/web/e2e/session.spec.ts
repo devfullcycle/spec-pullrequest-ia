@@ -263,15 +263,17 @@ test("a tela de entrar leva ao cadastro", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Criar conta" })).toBeVisible();
 });
 
-test("o link \"Esqueci minha senha\" não volta para a tela de entrar", async ({
+test("a tela de entrar leva à de \"Esqueci minha senha\"", async ({
   page,
 }) => {
   await page.goto("/entrar");
 
   await page.getByRole("link", { name: "Esqueci minha senha" }).click();
 
-  // A tela chega com a recuperação de senha. Até lá, o Proxy só não pode tratá-la como protegida.
   await expect(page).toHaveURL(/\/esqueci-minha-senha$/);
+  await expect(
+    page.getByRole("heading", { name: "Esqueci minha senha" }),
+  ).toBeVisible();
 });
 
 test("uma rota com ponto no nome também passa pelo Proxy", async ({ page }) => {
