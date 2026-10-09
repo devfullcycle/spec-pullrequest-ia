@@ -14,6 +14,8 @@ export interface Env {
   SMTP_IDLE_TIMEOUT_MS: number;
   WEB_ORIGIN: string;
   EMAIL_VERIFICATION_TTL_SECONDS: number;
+  ACCESS_TOKEN_TTL_SECONDS: number;
+  REFRESH_TOKEN_TTL_SECONDS: number;
 }
 
 /**
@@ -118,6 +120,14 @@ export const envSchema = Joi.object<Env>({
     .integer()
     .min(1)
     .default(24 * 60 * 60),
+  ACCESS_TOKEN_TTL_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .default(15 * 60),
+  REFRESH_TOKEN_TTL_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .default(30 * 24 * 60 * 60),
 })
   .custom(matchingJwtKeys)
   .messages({

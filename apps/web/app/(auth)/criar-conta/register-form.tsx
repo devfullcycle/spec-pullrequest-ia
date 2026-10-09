@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { Banner } from "@/components/ui/banner";
 import { ButtonPrimary } from "@/components/ui/button-primary";
 import { PasswordField } from "@/components/ui/password-field";
-import { TextField } from "@/components/ui/text-field";
+import { EmailField } from "../email-field";
 import { register } from "../actions";
 import type { RegisterFormState } from "../form-state";
 
@@ -22,12 +22,7 @@ export function RegisterForm() {
         </Banner>
       )}
       <div className="flex flex-col gap-4">
-        <TextField
-          label="E-mail"
-          name="email"
-          type="email"
-          autoComplete="email"
-          placeholder="nome@exemplo.com"
+        <EmailField
           defaultValue={state.email}
           error={state.fieldErrors?.email}
         />
