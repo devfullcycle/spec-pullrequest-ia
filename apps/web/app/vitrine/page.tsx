@@ -32,6 +32,7 @@ export default function VitrinePage() {
           Criar conta
         </TextLink>
         <TextLink>Reenviar e-mail</TextLink>
+        <TextLink disabled>Reenviar e-mail</TextLink>
       </Section>
 
       <Section title="button-primary">

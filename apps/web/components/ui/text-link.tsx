@@ -22,7 +22,7 @@ const SIZES: Record<Size, string> = {
 };
 
 export function TextLink({ size = "body", ...props }: TextLinkProps) {
-  const className = `${SIZES[size]} focus-ring text-primary hover:underline focus-visible:underline`;
+  const className = `${SIZES[size]} focus-ring text-primary not-disabled:hover:underline focus-visible:underline disabled:text-ink-disabled`;
 
   if (props.href !== undefined) {
     return <Link className={className} {...props} />;

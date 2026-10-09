@@ -53,6 +53,8 @@ services:
     # apps/web/package.json: ao atualizar uma, atualize a outra.
     image: mcr.microsoft.com/playwright:v1.64.0-noble
     init: true
+    # O Chromium usa memória compartilhada, e os 64 MB padrão do Docker não bastam para a suíte em paralelo.
+    ipc: host
     # O mesmo usuário do contêiner `web`, para os relatórios não nascerem como root na máquina.
     user: "1000:1000"
     working_dir: /app

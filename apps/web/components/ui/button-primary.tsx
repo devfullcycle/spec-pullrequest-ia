@@ -33,10 +33,10 @@ export function ButtonPrimary({ fullWidth, ...props }: ButtonPrimaryProps) {
 
   return (
     <button
+      {...rest}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={`${CLASSES} ${width}`}
-      {...rest}
     >
       {loading && <LoaderCircle className="size-4 animate-spin" />}
       {children}
