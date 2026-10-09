@@ -393,7 +393,7 @@ O arquivo do Figma espelha este documento com os mesmos nomes. Nenhuma camada us
 - **Título responsivo:** o `{typography.display}` de 28px, usado abaixo de `sm`, é o estilo de texto `typography/display-base` (28px, 600, 1.15, -0.56px). No código não há token próprio: é o mesmo `{typography.display}` com o tamanho reduzido.
 - **Raio em porcentagem:** variáveis do Figma não aceitam porcentagem, então `rounded/full` vale 9999, como `rounded/pill`.
 - **Estados de erro:** as variantes com sufixo (`text-field-error`) são o valor `error` da propriedade `State` do componente base.
-- **Estados de interação:** são valores da propriedade `State` (`default`, `hover`, `focus`, `disabled`, `loading`). O pressionado não é desenhado, porque é uma transformação (`scale(0.95)`) e não muda cor nem forma.
+- **Estados de interação:** são valores da propriedade `State` (`default`, `hover`, `focus`, `disabled`, `loading`). O hover é um segundo preenchimento em `colors/surface-hover`, sobre o preenchimento do controle. O pressionado não é desenhado, porque é uma transformação (`scale(0.95)`) e não muda cor nem forma.
 - **Anel de foco:** é a camada `focus-ring`, 4px maior que o controle em cada lado, com borda interna de 2px em `colors/primary-focus`. Isso reproduz o `outline` de 2px com 2px de afastamento. O raio do anel é o do controle mais 4px. No campo, o anel contorna só a caixa, e não o rótulo.
 - **Ícones:** os do Lucide, com o nome original na camada, para que o código importe o mesmo ícone do `lucide-react`.
 - **Processo:** as regras de trabalho com o Figma (sincronia, fluxo, assets, validação) estão na seção "Fluxo de trabalho com o Figma", a seguir.
@@ -464,7 +464,6 @@ Com a web rodando no contêiner, abra a tela pelo MCP do Playwright, capture em 
 - O produto ainda não tem nome nem logotipo. Onde este documento diz "marca do produto", a interface usa um marcador de texto até a identidade ser definida.
 - O contraste dos pares de cor (texto sobre superfície, nos dois temas) foi escolhido para atender à WCAG AA, mas ainda não foi medido com ferramenta. A medição acontece quando os tokens forem implementados.
 - O arquivo do Figma tem as fundações (variáveis, estilos de texto e de sombra), os componentes usados na autenticação (`auth-card`, `banner`, `button-primary`, `button-icon`, `text-field`, `password-field` e `text-link`) e as telas da página Autenticação. Os demais componentes e as páginas Drive, Link público e Planos ainda estão vazios, e a página Fundações não tem uma folha de amostras.
-- No Figma, o hover do `{component.text-field}` e do `{component.password-field}` não foi desenhado como variante. Ele vale pela regra geral de "Estados de interação".
 - Os tokens ainda não estão no `globals.css`, e o `lucide-react` não está instalado. Os dois entram com a implementação da interface.
 - Não há seletor manual de tema. O tema segue o sistema operacional.
 - Os controles internos de vídeo, áudio e PDF do `{component.preview-viewer}` são os do navegador e não seguem estes tokens.
