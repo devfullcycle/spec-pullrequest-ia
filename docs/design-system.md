@@ -78,7 +78,7 @@ Estas cores comunicam estado e nada mais. Um elemento só usa uma delas quando a
 | `{colors.warning}` | #b25000 | #ff9f0a | Cota perto do limite, pagamento em período de tolerância, link expirando. |
 | `{colors.warning-soft}` | #fff4e5 | #3a2a12 | Fundo de banner de alerta. |
 | `{colors.success}` | #1d7a34 | #30d158 | Upload concluído, plano ativo, link copiado. |
-| `{colors.success-soft}` | #e8f5ec | #1c3323 | Fundo de toast de sucesso. |
+| `{colors.success-soft}` | #e8f5ec | #1c3323 | Fundo de toast e de banner de sucesso. |
 
 ### Gradientes
 
@@ -245,7 +245,7 @@ Os estados são definidos uma vez aqui e valem para todo componente. A seção d
 
 ### Campos e formulários
 
-**`text-field`**: campo de texto com rótulo. Rótulo acima em `{typography.ui-strong}`; campo com fundo `{colors.canvas}`, texto em `{typography.body}`, borda de 1px em `{colors.hairline-strong}`, `{rounded.sm}`, padding 10px × 12px e altura de 44px. Placeholder em `{colors.ink-muted}`. Texto de ajuda abaixo, em `{typography.caption}` e `{colors.ink-muted}`.
+**`text-field`**: campo de texto com rótulo. Rótulo acima em `{typography.ui-strong}`; campo com fundo `{colors.canvas}`, texto em `{typography.body}`, borda de 1px em `{colors.hairline-strong}`, `{rounded.sm}`, padding 10px × 12px e altura de 44px. Placeholder em `{colors.ink-muted}`. Texto de ajuda abaixo, em `{typography.caption}` e `{colors.ink-muted}`. Rótulo, campo e texto de ajuda ficam separados por `{spacing.xs}`.
 
 **`text-field-error`**: estado de erro. A borda passa a 2px em `{colors.danger}`, e o texto de ajuda dá lugar à mensagem de erro em `{typography.caption}` e `{colors.danger}`, com um ícone de alerta de 16px. A mensagem diz o que corrigir, não só que há um erro.
 
@@ -265,7 +265,13 @@ Os estados são definidos uma vez aqui e valem para todo componente. A seção d
 
 **`toast`**: confirmação breve, no canto inferior esquerdo. Fundo `{colors.surface-raised}`, borda em `{colors.hairline}`, `{rounded.lg}`, `{shadow.overlay}`, padding 12px × 16px, texto em `{typography.ui}`. Pode ter uma ação em `{component.text-link}` ("Desfazer", depois de mover um item para a lixeira). Some sozinho em 5 segundos; os de erro ficam até o usuário fechar.
 
-**`banner`**: aviso persistente no topo da área de conteúdo, em largura total. Padding 12px × 16px, ícone de 20px, texto em `{typography.ui}` e, à direita, uma ação em `{component.text-link}`. Variações: alerta (`{colors.warning-soft}` com ícone em `{colors.warning}`), para cota perto do limite e pagamento em período de tolerância; e erro (`{colors.danger-soft}` com ícone em `{colors.danger}`), para a conta em modo somente leitura por estar acima da cota.
+**`banner`**: aviso persistente no topo da área de conteúdo, em largura total. Padding 12px × 16px, ícone de 20px, texto em `{typography.ui}` e `{colors.ink}` e, à direita, uma ação opcional em `{component.text-link}`. Variações:
+
+- **Alerta** (`{colors.warning-soft}` com o ícone `triangle-alert` em `{colors.warning}`): cota perto do limite, pagamento em período de tolerância e sessão expirada.
+- **Erro** (`{colors.danger-soft}` com o ícone `circle-alert` em `{colors.danger}`): conta em modo somente leitura por estar acima da cota e erros de formulário que não pertencem a um campo.
+- **Sucesso** (`{colors.success-soft}` com o ícone `circle-check` em `{colors.success}`): confirmação que precisa ficar na tela, como "e-mail verificado" e "senha redefinida".
+
+Dentro de um contêiner estreito, como o `{component.auth-card}`, o banner usa `{rounded.sm}` e a ação fica abaixo do texto, e não à direita.
 
 ### Compartilhamento
 
@@ -281,7 +287,15 @@ Os estados são definidos uma vez aqui e valem para todo componente. A seção d
 
 ### Autenticação
 
-**`auth-card`**: o cartão de login, cadastro e redefinição de senha. Página em `{colors.surface}`; cartão em `{colors.canvas}` com `{rounded.lg}`, padding `{spacing.xl}` e largura máxima de 400px. De cima para baixo: marca do produto, título em `{typography.display}`, campos em `{component.text-field}` separados por `{spacing.md}`, um `{component.button-primary}` em largura total e, abaixo, o `{component.text-link}` que leva ao fluxo vizinho ("Criar conta", "Esqueci minha senha"). Erros que não pertencem a um campo (credenciais inválidas, por exemplo) aparecem acima do formulário, em um `{component.banner}` de erro.
+**`auth-card`**: o cartão de login, cadastro e redefinição de senha. Página em `{colors.surface}`; cartão em `{colors.canvas}` com `{rounded.lg}`, padding `{spacing.xl}` e largura máxima de 400px. De cima para baixo: marca do produto, título em `{typography.display}`, campos em `{component.text-field}` separados por `{spacing.md}`, um `{component.button-primary}` em largura total e, abaixo, o `{component.text-link}` que leva ao fluxo vizinho ("Criar conta", "Esqueci minha senha"). Erros que não pertencem a um campo (credenciais inválidas, por exemplo) aparecem acima do formulário, em um `{component.banner}` de erro. Os avisos que chegam de outro fluxo ("e-mail verificado", "senha redefinida", "sua sessão expirou") ocupam o mesmo lugar, na variação de sucesso ou de alerta.
+
+O cartão tem ainda três conteúdos opcionais:
+
+- **Texto de apoio:** um parágrafo em `{typography.body}` e `{colors.ink-muted}`, logo abaixo do título, que explica o passo ("Informe seu e-mail e enviaremos um link").
+- **Frase de aceite:** em `{typography.caption}` e `{colors.ink-muted}`, abaixo do botão do cadastro, com os links dos Termos e da Política de Privacidade em `{component.text-link}`.
+- **Estado sem formulário:** telas de confirmação e de link inválido mostram só o título, o texto de apoio e a ação seguinte (um `{component.button-primary}` ou um `{component.text-link}`).
+
+O cartão fica a `{spacing.section}` do topo da página e centrado na horizontal. Abaixo de `sm`, ocupa a largura toda, com margem de `{spacing.md}`.
 
 ## Faça e não faça
 
@@ -376,14 +390,15 @@ O arquivo do Figma espelha este documento com os mesmos nomes. Nenhuma camada us
 | `{component.*}` | Componentes, com os estados como variantes | `{component.file-row}` → `file-row` |
 
 - **Temas:** os valores das colunas Claro e Escuro das tabelas de cor são os modos `Light` e `Dark` da coleção `colors`.
+- **Título responsivo:** o `{typography.display}` de 28px, usado abaixo de `sm`, é o estilo de texto `typography/display-base` (28px, 600, 1.15, -0.56px). No código não há token próprio: é o mesmo `{typography.display}` com o tamanho reduzido.
+- **Raio em porcentagem:** variáveis do Figma não aceitam porcentagem, então `rounded/full` vale 9999, como `rounded/pill`.
+- **Estados de erro:** as variantes com sufixo (`text-field-error`) são o valor `error` da propriedade `State` do componente base.
 - **Ícones:** os do Lucide, com o nome original na camada, para que o código importe o mesmo ícone do `lucide-react`.
 - **Processo:** as regras de trabalho com o Figma (sincronia, fluxo, assets, validação) estão na seção "Fluxo de trabalho com o Figma", a seguir.
 
 ## Fluxo de trabalho com o Figma
 
 O Figma é a ferramenta de design do projeto, acessada pelo servidor MCP do plugin `figma`. Este documento governa as duas pontas: o que é desenhado no Figma e o que é implementado no código. As regras abaixo valem para qualquer tarefa de interface.
-
-**Arquivo do Figma:** ainda não criado. Registre a URL aqui quando existir.
 
 ### Sincronia
 
@@ -446,7 +461,8 @@ Com a web rodando no contêiner, abra a tela pelo MCP do Playwright, capture em 
 
 - O produto ainda não tem nome nem logotipo. Onde este documento diz "marca do produto", a interface usa um marcador de texto até a identidade ser definida.
 - O contraste dos pares de cor (texto sobre superfície, nos dois temas) foi escolhido para atender à WCAG AA, mas ainda não foi medido com ferramenta. A medição acontece quando os tokens forem implementados.
-- O arquivo do Figma ainda não existe. As variáveis, os estilos e os componentes serão criados a partir deste documento.
+- O arquivo do Figma tem as fundações (variáveis, estilos de texto e de sombra), os componentes usados na autenticação (`auth-card`, `banner`, `button-primary`, `button-icon`, `text-field`, `password-field` e `text-link`) e as telas da página Autenticação. Os demais componentes e as páginas Drive, Link público e Planos ainda estão vazios, e a página Fundações não tem uma folha de amostras.
+- No Figma, os componentes só têm os estados que as telas de autenticação usam. Foco, pressionado e desabilitado valem pela regra geral de "Estados de interação" e ainda não foram desenhados como variantes.
 - Os tokens ainda não estão no `globals.css`, e o `lucide-react` não está instalado. Os dois entram com a implementação da interface.
 - Não há seletor manual de tema. O tema segue o sistema operacional.
 - Os controles internos de vídeo, áudio e PDF do `{component.preview-viewer}` são os do navegador e não seguem estes tokens.
