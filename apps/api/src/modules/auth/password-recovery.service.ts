@@ -3,6 +3,7 @@ import type { ConfigType } from '@nestjs/config';
 import { authConfig } from '../../config/auth.config.js';
 import { User } from '../users/entities/user.entity.js';
 import { UsersService } from '../users/users.service.js';
+import { AuthAttemptsService } from './auth-attempts.service.js';
 import { AuthMailerService } from './auth-mailer.service.js';
 import { EmailTokensService } from './email-tokens.service.js';
 import { InvalidTokenError } from './errors/invalid-token.error.js';
@@ -20,6 +21,7 @@ export class PasswordRecoveryService {
     private readonly sessions: SessionsService,
     private readonly emailTokens: EmailTokensService,
     private readonly mailer: AuthMailerService,
+    private readonly attempts: AuthAttemptsService,
     @Inject(authConfig.KEY)
     private readonly config: ConfigType<typeof authConfig>,
   ) {}
@@ -31,7 +33,8 @@ export class PasswordRecoveryService {
    * tempo de resposta não revelar se o e-mail tem Usuário. Uma falha ali só
    * vai para o log, e a pessoa pede outro link.
    */
-  async requestReset(email: string): Promise<void> {
+  async requestReset(email: string, clientIp: string): Promise<void> {
+    await this.attempts.emailRequest('forgot-password', email, clientIp);
     const user = await this.users.findByEmail(email);
     if (!user) {
       return;

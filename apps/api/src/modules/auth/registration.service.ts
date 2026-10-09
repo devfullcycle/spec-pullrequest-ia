@@ -3,6 +3,7 @@ import type { ConfigType } from '@nestjs/config';
 import { authConfig } from '../../config/auth.config.js';
 import { User } from '../users/entities/user.entity.js';
 import { UsersService } from '../users/users.service.js';
+import { AuthAttemptsService } from './auth-attempts.service.js';
 import { AuthMailerService } from './auth-mailer.service.js';
 import { EmailTokensService } from './email-tokens.service.js';
 import { PasswordService } from './password.service.js';
@@ -15,6 +16,7 @@ export class RegistrationService {
     private readonly passwords: PasswordService,
     private readonly emailTokens: EmailTokensService,
     private readonly mailer: AuthMailerService,
+    private readonly attempts: AuthAttemptsService,
     @Inject(authConfig.KEY)
     private readonly config: ConfigType<typeof authConfig>,
   ) {}
@@ -23,7 +25,12 @@ export class RegistrationService {
    * Nunca revela se o e-mail já tem Usuário: o que muda entre os casos é só o
    * e-mail enviado.
    */
-  async register(email: string, password: string): Promise<void> {
+  async register(
+    email: string,
+    password: string,
+    clientIp: string,
+  ): Promise<void> {
+    await this.attempts.emailRequest('register', email, clientIp);
     // O hash é calculado em todos os casos, para o tempo de resposta ser o mesmo.
     const passwordHash = await this.passwords.hash(password);
 
@@ -49,7 +56,8 @@ export class RegistrationService {
   }
 
   /** Responde igual para e-mail sem Usuário e para e-mail já verificado. */
-  async resendVerification(email: string): Promise<void> {
+  async resendVerification(email: string, clientIp: string): Promise<void> {
+    await this.attempts.emailRequest('resend-verification', email, clientIp);
     const user = await this.users.findByEmail(email);
     if (user && !user.emailVerifiedAt) {
       await this.sendVerification(user);

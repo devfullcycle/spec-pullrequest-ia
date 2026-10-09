@@ -5,6 +5,7 @@ import { authConfig } from './auth.config.js';
 import { databaseConfig } from './database.config.js';
 import { validatedEnv } from './env.js';
 import { mailConfig } from './mail.config.js';
+import { rateLimitConfig } from './rate-limit.config.js';
 
 interface AppConfigModuleOptions {
   /**
@@ -27,7 +28,13 @@ export class AppConfigModule {
       isGlobal: true,
       ignoreEnvFile: options.ignoreEnvFile ?? false,
       validate: validatedEnv,
-      load: [appConfig, authConfig, databaseConfig, mailConfig],
+      load: [
+        appConfig,
+        authConfig,
+        databaseConfig,
+        mailConfig,
+        rateLimitConfig,
+      ],
     });
   }
 }

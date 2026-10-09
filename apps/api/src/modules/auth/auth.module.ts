@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AccessTokensModule } from '../../common/auth/access-tokens.module.js';
+import { RateLimitModule } from '../../common/rate-limit/rate-limit.module.js';
 import { MailModule } from '../../infra/mail/mail.module.js';
 import { UsersModule } from '../users/users.module.js';
+import { AuthAttemptsService } from './auth-attempts.service.js';
 import { AuthMailerService } from './auth-mailer.service.js';
 import { AuthController } from './auth.controller.js';
 import { EmailTokensRepository } from './email-tokens.repository.js';
@@ -13,7 +15,7 @@ import { RegistrationService } from './registration.service.js';
 import { SessionsService } from './sessions.service.js';
 
 @Module({
-  imports: [UsersModule, MailModule, AccessTokensModule],
+  imports: [UsersModule, MailModule, AccessTokensModule, RateLimitModule],
   controllers: [AuthController],
   providers: [
     RegistrationService,
@@ -24,6 +26,7 @@ import { SessionsService } from './sessions.service.js';
     EmailTokensService,
     EmailTokensRepository,
     AuthMailerService,
+    AuthAttemptsService,
   ],
 })
 export class AuthModule {}

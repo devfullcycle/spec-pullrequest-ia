@@ -61,3 +61,13 @@ model RefreshToken {
   @@index([userId])
   @@map("refresh_tokens")
 }
+
+/// Contador do limite de tentativas: uma linha por chave, com a janela atual.
+model RateLimit {
+  /// Por exemplo `login:email:<hash do e-mail>` ou `login:ip:<ip>`.
+  key         String   @id
+  windowStart DateTime @map("window_start") @db.Timestamptz
+  count       Int
+
+  @@map("rate_limits")
+}

@@ -1,5 +1,6 @@
 import "server-only";
 import { unstable_rethrow } from "next/navigation";
+import { clientIpHeaders } from "@/lib/api/client-ip";
 import { API_TIMEOUT_MS, apiEndpoint } from "@/lib/api/endpoint";
 import {
   API_ERROR_CODES,
@@ -36,12 +37,14 @@ export async function apiRequest<T = void>(
     timeoutMs = API_TIMEOUT_MS,
   }: ApiRequestOptions = {},
 ): Promise<ApiResult<T>> {
-  const headers = new Headers({ Accept: "application/json" });
+  // Fora do `try`: sem as variáveis, o erro é de configuração, e não uma falha da API.
+  const url = apiEndpoint(path);
+  const headers = new Headers({
+    Accept: "application/json",
+    ...(await clientIpHeaders()),
+  });
   if (body !== undefined) headers.set("Content-Type", "application/json");
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
-
-  // Fora do `try`: sem a variável, o erro é de configuração, e não uma falha da API.
-  const url = apiEndpoint(path);
 
   let response: Response;
   try {

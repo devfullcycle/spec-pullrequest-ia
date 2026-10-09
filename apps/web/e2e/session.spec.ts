@@ -2,6 +2,7 @@ import {
   expect,
   test,
   type BrowserContext,
+  type Locator,
   type Page,
 } from "@playwright/test";
 import {
@@ -76,6 +77,13 @@ async function tokenCookies(context: BrowserContext) {
   return (await context.cookies()).filter(({ name }) =>
     TOKEN_COOKIES.includes(name),
   );
+}
+
+/** O aviso do formulário fica acima do campo de e-mail. */
+async function expectAboveEmailField(page: Page, alert: Locator) {
+  const alertBox = await alert.boundingBox();
+  const fieldBox = await page.getByLabel("E-mail").boundingBox();
+  expect(alertBox!.y + alertBox!.height).toBeLessThan(fieldBox!.y);
 }
 
 test("o Usuário entra, vê o próprio e-mail na página provisória e sai", async ({
@@ -177,15 +185,37 @@ test("credenciais inválidas aparecem num aviso acima do formulário, igual para
   const alert = page.locator("form").getByRole("alert");
   await expect(alert).toHaveText("E-mail ou senha incorretos.");
   // O aviso vem antes dos campos, e o e-mail digitado continua no lugar.
-  const alertBox = await alert.boundingBox();
-  const fieldBox = await page.getByLabel("E-mail").boundingBox();
-  expect(alertBox!.y + alertBox!.height).toBeLessThan(fieldBox!.y);
+  await expectAboveEmailField(page, alert);
   await expect(page.getByLabel("E-mail")).toHaveValue(email);
   await expect(page.getByLabel("Senha", { exact: true })).toHaveValue("");
   await expect(page).toHaveURL(/\/entrar/);
 
   await fillLogin(page, uniqueEmail(), PASSWORD);
   await expect(alert).toHaveText("E-mail ou senha incorretos.");
+});
+
+test("estourar o limite de tentativas de login mostra o aviso de espera acima do formulário, mesmo com a senha certa", async ({
+  page,
+}) => {
+  const email = uniqueEmail();
+  await createVerifiedUser(page, email);
+  const alert = page.locator("form").getByRole("alert");
+  // O teto de produção: cinco tentativas por e-mail a cada 15 minutos.
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    await fillLogin(page, email, "uma senha bem errada");
+    await expect(alert).toHaveText("E-mail ou senha incorretos.");
+    // O botão volta a aceitar o clique quando o envio anterior termina.
+    await expect(page.getByRole("button", { name: "Entrar" })).toBeEnabled();
+  }
+
+  await fillLogin(page, email, PASSWORD);
+
+  await expect(alert).toHaveText(
+    "Muitas tentativas. Aguarde alguns minutos e tente de novo.",
+  );
+  await expectAboveEmailField(page, alert);
+  await expect(page.getByLabel("E-mail")).toHaveValue(email);
+  await expect(page).toHaveURL(/\/entrar/);
 });
 
 test("o Usuário não verificado vê o aviso e pede o reenvio na própria tela de entrar", async ({

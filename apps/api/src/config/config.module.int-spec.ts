@@ -5,6 +5,7 @@ import { authConfig } from './auth.config.js';
 import { AppConfigModule } from './config.module.js';
 import { databaseConfig } from './database.config.js';
 import { mailConfig } from './mail.config.js';
+import { rateLimitConfig } from './rate-limit.config.js';
 
 const REQUIRED_VARIABLES = [
   'DATABASE_URL',
@@ -13,6 +14,7 @@ const REQUIRED_VARIABLES = [
   'SMTP_URL',
   'MAIL_FROM',
   'WEB_ORIGIN',
+  'INTERNAL_API_SECRET',
 ];
 
 // As variáveis válidas já estão no ambiente, carregadas do `.env` pela base de
@@ -37,12 +39,24 @@ describe('Variáveis de ambiente na subida', () => {
     vi.stubEnv('MAIL_FROM', 'Remetente <remetente@example.com>');
     vi.stubEnv('WEB_ORIGIN', 'https://app.example.com');
     vi.stubEnv('EMAIL_VERIFICATION_TTL_SECONDS', '600');
+    vi.stubEnv('INTERNAL_API_SECRET', 'um-segredo-com-mais-de-32-caracteres');
+    vi.stubEnv('LOGIN_RATE_LIMIT_PER_EMAIL', '7');
+    vi.stubEnv('LOGIN_RATE_LIMIT_PER_IP', '70');
+    vi.stubEnv('LOGIN_RATE_LIMIT_WINDOW_SECONDS', '60');
+    vi.stubEnv('EMAIL_REQUEST_RATE_LIMIT_PER_EMAIL', '4');
+    vi.stubEnv('EMAIL_REQUEST_RATE_LIMIT_PER_IP', '40');
+    vi.stubEnv('EMAIL_REQUEST_RATE_LIMIT_WINDOW_SECONDS', '120');
 
     const moduleRef = await boot();
 
     expect(moduleRef.get(appConfig.KEY)).toEqual({
       port: 4321,
       webOrigin: 'https://app.example.com',
+      internalApiSecret: 'um-segredo-com-mais-de-32-caracteres',
+    });
+    expect(moduleRef.get(rateLimitConfig.KEY)).toEqual({
+      login: { perEmail: 7, perIp: 70, windowSeconds: 60 },
+      emailRequest: { perEmail: 4, perIp: 40, windowSeconds: 120 },
     });
     expect(moduleRef.get(databaseConfig.KEY)).toEqual({
       url: 'postgresql://user:pass@postgres:5432/db',
@@ -68,6 +82,26 @@ describe('Variáveis de ambiente na subida', () => {
     expect(moduleRef.get(authConfig.KEY).emailVerificationTtlSeconds).toBe(
       86_400,
     );
+  });
+
+  it('usa os tetos e as janelas de produção quando as variáveis do limite de tentativas não são definidas', async () => {
+    for (const variable of [
+      'LOGIN_RATE_LIMIT_PER_EMAIL',
+      'LOGIN_RATE_LIMIT_PER_IP',
+      'LOGIN_RATE_LIMIT_WINDOW_SECONDS',
+      'EMAIL_REQUEST_RATE_LIMIT_PER_EMAIL',
+      'EMAIL_REQUEST_RATE_LIMIT_PER_IP',
+      'EMAIL_REQUEST_RATE_LIMIT_WINDOW_SECONDS',
+    ]) {
+      vi.stubEnv(variable, undefined);
+    }
+
+    const moduleRef = await boot();
+
+    expect(moduleRef.get(rateLimitConfig.KEY)).toEqual({
+      login: { perEmail: 5, perIp: 20, windowSeconds: 15 * 60 },
+      emailRequest: { perEmail: 3, perIp: 10, windowSeconds: 60 * 60 },
+    });
   });
 
   it('usa a porta 3000 quando PORT não é definida', async () => {
@@ -107,6 +141,13 @@ describe('Variáveis de ambiente na subida', () => {
     ['EMAIL_VERIFICATION_TTL_SECONDS', 'um dia'],
     ['REFRESH_TOKEN_REUSE_GRACE_SECONDS', '-1'],
     ['REFRESH_TOKEN_REUSE_GRACE_SECONDS', 'pouco'],
+    ['INTERNAL_API_SECRET', 'curto'],
+    ['LOGIN_RATE_LIMIT_PER_EMAIL', '0'],
+    ['LOGIN_RATE_LIMIT_PER_IP', 'muitas'],
+    ['LOGIN_RATE_LIMIT_WINDOW_SECONDS', '0'],
+    ['EMAIL_REQUEST_RATE_LIMIT_PER_EMAIL', '0'],
+    ['EMAIL_REQUEST_RATE_LIMIT_PER_IP', '1.5'],
+    ['EMAIL_REQUEST_RATE_LIMIT_WINDOW_SECONDS', '-1'],
     ['JWT_PRIVATE_KEY', 'não é uma chave'],
     ['JWT_PUBLIC_KEY', 'não é uma chave'],
   ])(
@@ -140,6 +181,12 @@ describe('Variáveis de ambiente na subida', () => {
     vi.stubEnv('JWT_PRIVATE_KEY', 'valor-secreto-que-nao-e-pem');
 
     await expect(boot()).rejects.not.toThrow('valor-secreto-que-nao-e-pem');
+  });
+
+  it('não expõe o valor de um INTERNAL_API_SECRET inválido na mensagem de erro', async () => {
+    vi.stubEnv('INTERNAL_API_SECRET', 'segredo-curto');
+
+    await expect(boot()).rejects.not.toThrow('segredo-curto');
   });
 
   describe('chaves do JWT', () => {
