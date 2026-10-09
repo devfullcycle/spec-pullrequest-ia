@@ -373,7 +373,11 @@ As tabelas deste documento são a fonte da verdade. A implementação declara os
 | `{shadow.*}` | `--shadow-<nome>` | `{shadow.overlay}` → `--shadow-overlay` → `shadow-overlay` |
 | `{spacing.*}` | Nenhuma: usa a escala padrão de 4px | `{spacing.lg}` (24px) → `p-6` |
 
-- **Temas:** cada cor é declarada uma vez em `:root` com o valor claro e sobrescrita em `@media (prefers-color-scheme: dark)` com o valor escuro, como o `globals.css` do scaffold já faz com `--background` e `--foreground`.
+- **Temas:** cada cor é declarada no `@theme` com o valor claro e sobrescrita em `:root`, sob a variante `dark` (`prefers-color-scheme: dark`), com o valor escuro.
+- **Só os tokens:** as escalas padrão de cor, texto, raio e sombra do Tailwind são apagadas no `@theme`. Fora das classes desta tabela, nenhuma classe desses grupos gera CSS.
+- **Título responsivo:** `text-display` já muda de 28px para 32px em `sm`, sem classe de breakpoint. O espaçamento entre letras dos títulos é declarado em `em`, na mesma proporção das tabelas, para acompanhar o tamanho.
+- **Raios sem variável:** `{rounded.none}` e `{rounded.full}` são as classes `rounded-none` e `rounded-full` do Tailwind.
+- **Estados:** o anel de foco é o utilitário `focus-ring` (`focus-ring-within` na caixa de um campo), e o hover de um controle preenchido é o `hover-overlay`.
 - **Componentes:** as chaves `{component.*}` nomeiam componentes React em `kebab-case`. Elas não viram variáveis CSS.
 - **Sintaxe:** confirme a sintaxe atual do `@theme` na documentação do Tailwind, pelo context7, antes de implementar.
 
@@ -482,7 +486,7 @@ Com a web rodando no contêiner, abra a tela pelo MCP do Playwright, capture em 
 - O produto ainda não tem nome nem logotipo. Onde este documento diz "marca do produto", a interface usa um marcador de texto até a identidade ser definida.
 - O contraste dos pares de cor (texto sobre superfície, nos dois temas) foi escolhido para atender à WCAG AA, mas ainda não foi medido com ferramenta. A medição acontece quando os tokens forem implementados.
 - O arquivo do Figma tem as fundações (variáveis, estilos de texto e de sombra), os componentes usados na autenticação (`auth-card`, `banner`, `button-primary`, `button-icon`, `text-field`, `password-field` e `text-link`) e as telas da página Autenticação. Os demais componentes e as páginas Drive, Link público e Planos ainda estão vazios.
-- Os tokens ainda não estão no `globals.css`, e o `lucide-react` não está instalado. Os dois entram com a implementação da interface.
+- No código, só existem os componentes usados na autenticação, os mesmos que o Figma tem. Os demais entram com as telas que os usam.
 - Não há seletor manual de tema. O tema segue o sistema operacional.
 - Os controles internos de vídeo, áudio e PDF do `{component.preview-viewer}` são os do navegador e não seguem estes tokens.
 - O checkout de cartão e Pix é hospedado pelo gateway de pagamento e fica fora deste design system. Só o `{component.plan-card}` e a tela de retorno são nossos.

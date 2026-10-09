@@ -25,7 +25,7 @@ Cada projeto tem o próprio `AGENTS.md`, com os comandos, as particularidades da
 
 Tudo roda dentro dos contêineres do Docker Compose: instalação de dependências, servidor de desenvolvimento, testes, lint, compilação do TypeScript e qualquer outro comando do projeto. **Nunca rode `pnpm`, `node` ou `npx` direto na máquina.**
 
-O ambiente de desenvolvimento usa o `compose.dev.yaml`, na raiz, com quatro serviços:
+O ambiente de desenvolvimento usa o `compose.dev.yaml`, na raiz, com cinco serviços:
 
 | Serviço | O que é | Endereço na máquina | Endereço entre contêineres |
 | --- | --- | --- | --- |
@@ -33,8 +33,9 @@ O ambiente de desenvolvimento usa o `compose.dev.yaml`, na raiz, com quatro serv
 | `api` | API em NestJS | `http://localhost:3001` | `http://api:3000` |
 | `postgres` | Banco PostgreSQL (usuário, senha e banco `app`) | Não é publicado | `postgres:5432` |
 | `mailpit` | Captura os e-mails enviados e os mostra numa tela | `http://localhost:8025` | SMTP em `mailpit:1025` e API HTTP em `http://mailpit:8025` |
+| `playwright` | Navegadores dos testes da web | Não é publicado | Não recebe conexões |
 
-Os contêineres `web` e `api` preparam o próprio ambiente ao subir e depois ficam parados, sem iniciar a aplicação. A `node_modules` é criada na pasta do projeto, montada da máquina, e não num volume do Docker. Os comandos são executados neles com `docker compose exec`.
+Os contêineres `web` e `api` preparam o próprio ambiente ao subir e depois ficam parados, sem iniciar a aplicação. O `playwright` também fica parado, e o comando dos testes está no `apps/web/AGENTS.md`. A `node_modules` é criada na pasta do projeto, montada da máquina, e não num volume do Docker. Os comandos são executados neles com `docker compose exec`.
 
 Na subida, o contêiner `api` faz sozinho, nesta ordem:
 
@@ -53,7 +54,7 @@ docker compose -f compose.dev.yaml exec web pnpm dev --hostname 0.0.0.0
 docker compose -f compose.dev.yaml exec api pnpm start:dev
 ```
 
-O `--wait` segura o primeiro comando até os quatro serviços ficarem prontos, o que inclui a instalação das dependências e as migrações. Na primeira subida, isso leva alguns minutos. Se ele terminar com erro, veja a causa com `docker compose -f compose.dev.yaml logs api`.
+O `--wait` segura o primeiro comando até os cinco serviços ficarem prontos, o que inclui a instalação das dependências e as migrações. Na primeira subida, isso leva alguns minutos. Se ele terminar com erro, veja a causa com `docker compose -f compose.dev.yaml logs api`.
 
 Quando a preparação da API falha (uma migração quebrada, um `.env` incompleto), o contêiner `api` encerra e o `exec` deixa de funcionar nele. Para consertar, rode o comando num contêiner avulso, que não passa pela preparação:
 
