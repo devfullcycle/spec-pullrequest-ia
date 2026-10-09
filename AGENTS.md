@@ -105,6 +105,8 @@ Dentro de um contêiner, `localhost` é o próprio contêiner, e não a máquina
 
 A regra vale para variáveis de ambiente, arquivos de configuração e código que referencie o host de um serviço.
 
+**Exceção:** quando o processo fala com algo que roda no mesmo contêiner, o endereço é `127.0.0.1`. É o caso do healthcheck de um serviço, que confere o próprio contêiner, e de um teste que abre um servidor temporário no contêiner onde roda.
+
 ## Princípios de trabalho
 
 - **Responsabilidade única:** cada módulo e cada função tem uma responsabilidade clara. Reavalie isso a cada passo. Quando um módulo começa a criar ou alterar entidades de outro domínio, extraia a lógica para o módulo certo na hora, em vez de deixar para uma tarefa futura.

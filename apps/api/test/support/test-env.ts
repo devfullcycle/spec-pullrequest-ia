@@ -1,41 +1,41 @@
 import { existsSync } from 'node:fs';
 
+declare module 'vitest' {
+  interface ProvidedContext {
+    /** URL do banco de testes, calculada uma vez por execução da suíte. */
+    testDatabaseUrl: string;
+  }
+}
+
 const TEST_DATABASE_SUFFIX = '_test';
 
-/** Diz se a URL aponta para o banco de testes, e não para o de desenvolvimento. */
-export function isTestDatabaseUrl(databaseUrl: string): boolean {
-  return new URL(databaseUrl).pathname.endsWith(TEST_DATABASE_SUFFIX);
-}
-
 /**
- * Troca o banco da URL pelo banco de testes, que fica no mesmo PostgreSQL e leva
- * o sufixo `_test` (`app` vira `app_test`).
+ * Carrega o `.env` nas variáveis de ambiente das suítes de integração e de
+ * ponta a ponta. O que já está definido no ambiente prevalece.
  */
-function toTestDatabaseUrl(databaseUrl: string): string {
-  if (isTestDatabaseUrl(databaseUrl)) {
-    return databaseUrl;
-  }
-  const url = new URL(databaseUrl);
-  url.pathname += TEST_DATABASE_SUFFIX;
-  return url.toString();
-}
-
-/**
- * Prepara as variáveis de ambiente das suítes de integração e de ponta a ponta:
- * carrega o `.env` e aponta `DATABASE_URL` para o banco de testes. Pode ser
- * chamada mais de uma vez.
- */
-export function loadTestEnv(): void {
+export function loadEnvFile(): void {
   if (existsSync('.env')) {
-    // Não sobrescreve o que já está definido no ambiente.
     process.loadEnvFile('.env');
   }
+}
 
-  const databaseUrl = process.env.DATABASE_URL;
+/**
+ * URL do banco de testes: o mesmo PostgreSQL de `DATABASE_URL`, com o sufixo
+ * `_test` no nome do banco (`app` vira `app_test`). O sufixo é sempre
+ * acrescentado, para o resultado nunca ser o próprio banco de desenvolvimento.
+ */
+export function toTestDatabaseUrl(databaseUrl: string | undefined): string {
   if (!databaseUrl) {
     throw new Error(
       'DATABASE_URL não está definida. Suba o ambiente pelo Compose antes de rodar os testes.',
     );
   }
-  process.env.DATABASE_URL = toTestDatabaseUrl(databaseUrl);
+  const url = new URL(databaseUrl);
+  if (!/^\/[^/]+$/.test(url.pathname)) {
+    throw new Error(
+      'DATABASE_URL precisa trazer o nome do banco, e é dele que sai o banco de testes.',
+    );
+  }
+  url.pathname += TEST_DATABASE_SUFFIX;
+  return url.toString();
 }

@@ -18,6 +18,9 @@ export class SmtpMailSender implements MailSender, OnModuleDestroy {
     // todo esse tempo.
     this.transporter = createTransport({
       url: config.smtpUrl,
+      // Reaproveita a conexão entre um envio e outro, em vez de refazer a
+      // negociação com o servidor a cada e-mail.
+      pool: true,
       dnsTimeout: config.timeoutMs,
       connectionTimeout: config.timeoutMs,
       greetingTimeout: config.timeoutMs,

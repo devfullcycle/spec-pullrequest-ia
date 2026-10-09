@@ -1,7 +1,19 @@
 import { randomUUID } from 'node:crypto';
 
-/** Endereço da API HTTP do Mailpit, de onde os testes leem os e-mails enviados. */
-const MAILPIT_API_URL = 'http://mailpit:8025';
+/**
+ * Endereço da API HTTP do Mailpit, de onde os testes leem os e-mails enviados.
+ * O host é o mesmo de `SMTP_URL`, para a leitura cair no servidor que recebeu
+ * o envio.
+ */
+function mailpitApiUrl(): string {
+  const smtpUrl = process.env.SMTP_URL;
+  if (!smtpUrl) {
+    throw new Error(
+      'SMTP_URL não está definida: não há Mailpit para consultar.',
+    );
+  }
+  return `http://${new URL(smtpUrl).hostname}:8025`;
+}
 
 /** Um e-mail capturado pelo Mailpit, só com o que os testes conferem. */
 export interface CapturedMail {
@@ -89,7 +101,7 @@ async function readMail(id: string): Promise<CapturedMail> {
 }
 
 async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${MAILPIT_API_URL}${path}`);
+  const response = await fetch(`${mailpitApiUrl()}${path}`);
   if (!response.ok) {
     throw new Error(`Mailpit respondeu ${response.status} em ${path}.`);
   }
