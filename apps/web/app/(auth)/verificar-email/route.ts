@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { NextRequest } from "next/server";
 import { verifyEmail } from "@/lib/api/auth";
+import { EMAIL_VERIFIED_NOTICE, loginPath } from "@/lib/session/login-path";
 
 const INVALID_LINK_PATH = "/verificar-email/link-invalido";
 
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
   if (!token) redirect(INVALID_LINK_PATH);
 
   const result = await verifyEmail({ token });
-  if (result.ok) redirect("/entrar?aviso=email-verificado");
+  if (result.ok) redirect(loginPath({ notice: EMAIL_VERIFIED_NOTICE }));
 
   // Só `invalid_token` e um token malformado dizem que o link não vale. O resto é falha nossa,
   // e o link pode continuar bom.

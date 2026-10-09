@@ -204,6 +204,71 @@ describe('Entrar e sair', () => {
     });
   });
 
+  describe('renovação', () => {
+    it('devolve um par novo, e o token de acesso novo funciona na rota do Usuário autenticado', async () => {
+      const email = uniqueEmail();
+      const tokens = await auth.openSession(email);
+
+      const response = await auth.refresh(tokens.refreshToken).expect(200);
+
+      expect(response.body).toEqual({
+        accessToken: expect.stringMatching(/^[\w-]+\.[\w-]+\.[\w-]+$/),
+        refreshToken: expect.stringMatching(/^[\w-]{43}$/),
+        expiresIn: 15 * 60,
+      });
+      expect(response.body.refreshToken).not.toBe(tokens.refreshToken);
+      const me = await auth.me(response.body.accessToken).expect(200);
+      expect(me.body.email).toBe(email);
+    });
+
+    it('dá outro par válido ao token já trocado, dentro da janela de tolerância', async () => {
+      const tokens = await auth.openSession(uniqueEmail());
+      const { body: first } = await auth
+        .refresh(tokens.refreshToken)
+        .expect(200);
+
+      const { body: second } = await auth
+        .refresh(tokens.refreshToken)
+        .expect(200);
+
+      expect(second.refreshToken).not.toBe(first.refreshToken);
+      await auth.me(second.accessToken).expect(200);
+      // Os dois ramos seguem válidos.
+      await auth.refresh(first.refreshToken).expect(200);
+      await auth.refresh(second.refreshToken).expect(200);
+    });
+
+    it('atende renovações simultâneas com o mesmo token', async () => {
+      const tokens = await auth.openSession(uniqueEmail());
+
+      const responses = await Promise.all(
+        Array.from({ length: 5 }, () => auth.refresh(tokens.refreshToken)),
+      );
+
+      expect(responses.map((response) => response.status)).toEqual(
+        Array(5).fill(200),
+      );
+      const branches = responses.map((response) => response.body.refreshToken);
+      expect(new Set(branches).size).toBe(5);
+      for (const branch of branches) {
+        await auth.refresh(branch).expect(200);
+      }
+    });
+
+    it('devolve unauthenticated para um token que nunca foi emitido', async () => {
+      await auth.expectRefreshRejected('um-token-que-nunca-existiu');
+    });
+
+    it('devolve validation_error quando o token não vem', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/v1/auth/refresh')
+        .send({})
+        .expect(400);
+
+      expect(response.body.code).toBe('validation_error');
+    });
+  });
+
   describe('logout', () => {
     it('responde 204 sem corpo, e as outras Sessões do Usuário continuam', async () => {
       const email = uniqueEmail();
@@ -216,12 +281,49 @@ describe('Entrar e sair', () => {
       await auth.me(second.accessToken).expect(200);
     });
 
-    // O fim da Sessão só é observável pela renovação, que chega com o ticket da
-    // Sessão que se renova: o token de acesso vale até expirar.
-    it.todo(
-      'encerra a Sessão do token: a renovação com ele deixa de funcionar',
-    );
-    it.todo('mantém as outras Sessões: a renovação delas continua funcionando');
+    // O fim da Sessão é observado pela renovação: o token de acesso vale até
+    // expirar.
+    it('encerra a Sessão do token: a renovação com ele deixa de funcionar', async () => {
+      const tokens = await auth.openSession(uniqueEmail());
+
+      await auth.logout(tokens.refreshToken).expect(204);
+
+      await auth.expectRefreshRejected(tokens.refreshToken);
+    });
+
+    it('mantém as outras Sessões: a renovação delas continua funcionando', async () => {
+      const email = uniqueEmail();
+      await auth.registerVerified(email);
+      const { body: first } = await auth.login(email).expect(200);
+      const { body: second } = await auth.login(email).expect(200);
+
+      await auth.logout(first.refreshToken).expect(204);
+
+      await auth.refresh(second.refreshToken).expect(200);
+    });
+
+    it('invalida todos os ramos da Sessão depois de renovações simultâneas', async () => {
+      const tokens = await auth.openSession(uniqueEmail());
+      const [{ body: left }, { body: right }] = await Promise.all([
+        auth.refresh(tokens.refreshToken).expect(200),
+        auth.refresh(tokens.refreshToken).expect(200),
+      ]);
+      // Um ramo que já andou mais uma troca também é da mesma Sessão.
+      const { body: leftAgain } = await auth
+        .refresh(left.refreshToken)
+        .expect(200);
+
+      await auth.logout(right.refreshToken).expect(204);
+
+      for (const token of [
+        tokens.refreshToken,
+        left.refreshToken,
+        leftAgain.refreshToken,
+        right.refreshToken,
+      ]) {
+        await auth.expectRefreshRejected(token);
+      }
+    });
 
     it('responde 204 para um token que nunca foi emitido', async () => {
       await auth.logout('um-token-que-nunca-existiu').expect(204, {});
@@ -232,9 +334,7 @@ describe('Entrar e sair', () => {
     });
 
     it('responde 204 para o token de uma Sessão já encerrada', async () => {
-      const email = uniqueEmail();
-      await auth.registerVerified(email);
-      const { body: tokens } = await auth.login(email).expect(200);
+      const tokens = await auth.openSession(uniqueEmail());
       await auth.logout(tokens.refreshToken).expect(204);
 
       await auth.logout(tokens.refreshToken).expect(204, {});
@@ -261,9 +361,7 @@ describe('Entrar e sair', () => {
       vi.stubEnv('ACCESS_TOKEN_TTL_SECONDS', '1');
       shortLivedApp = await createTestApp();
       const shortLived = authRoutes(shortLivedApp);
-      const email = uniqueEmail();
-      await shortLived.registerVerified(email);
-      const { body: tokens } = await shortLived.login(email).expect(200);
+      const tokens = await shortLived.openSession(uniqueEmail());
       expect(tokens.expiresIn).toBe(1);
       await shortLived.me(tokens.accessToken).expect(200);
 
@@ -275,17 +373,59 @@ describe('Entrar e sair', () => {
       );
     });
 
-    it('responde 204 ao sair com um token de renovação expirado', async () => {
+    it('encerra todas as Sessões quando o token trocado é reapresentado depois de expirar', async () => {
+      vi.stubEnv('REFRESH_TOKEN_TTL_SECONDS', '3');
+      vi.stubEnv('REFRESH_TOKEN_REUSE_GRACE_SECONDS', '1');
+      shortLivedApp = await createTestApp();
+      const shortLived = authRoutes(shortLivedApp);
+      const stolen = await shortLived.openSession(uniqueEmail());
+      // O token novo nasce com a validade inteira, e passa a durar mais que o trocado.
+      await sleep(2000);
+      const { body: renewed } = await shortLived
+        .refresh(stolen.refreshToken)
+        .expect(200);
+
+      await sleep(1300);
+
+      await shortLived.expectRefreshRejected(stolen.refreshToken);
+      await shortLived.expectRefreshRejected(renewed.refreshToken);
+    });
+
+    it('com um token de renovação expirado, a renovação devolve unauthenticated e sair responde 204', async () => {
       vi.stubEnv('REFRESH_TOKEN_TTL_SECONDS', '1');
       shortLivedApp = await createTestApp();
       const shortLived = authRoutes(shortLivedApp);
-      const email = uniqueEmail();
-      await shortLived.registerVerified(email);
-      const { body: tokens } = await shortLived.login(email).expect(200);
+      const tokens = await shortLived.openSession(uniqueEmail());
 
       await sleep(1100);
 
+      await shortLived.expectRefreshRejected(tokens.refreshToken);
       await shortLived.logout(tokens.refreshToken).expect(204, {});
+    });
+
+    it('recusa o token trocado depois da janela de tolerância e encerra todas as Sessões do Usuário', async () => {
+      vi.stubEnv('REFRESH_TOKEN_REUSE_GRACE_SECONDS', '1');
+      shortLivedApp = await createTestApp();
+      const shortLived = authRoutes(shortLivedApp);
+      const email = uniqueEmail();
+      const stolen = await shortLived.openSession(email);
+      const { body: otherSession } = await shortLived.login(email).expect(200);
+      const otherUser = await shortLived.openSession(uniqueEmail());
+      const { body: renewed } = await shortLived
+        .refresh(stolen.refreshToken)
+        .expect(200);
+
+      await sleep(1100);
+
+      for (const token of [
+        stolen.refreshToken,
+        renewed.refreshToken,
+        otherSession.refreshToken,
+      ]) {
+        await shortLived.expectRefreshRejected(token);
+      }
+      // Só as Sessões do Usuário do token caem.
+      await shortLived.refresh(otherUser.refreshToken).expect(200);
     });
   });
 });

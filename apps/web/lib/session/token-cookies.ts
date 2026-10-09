@@ -45,8 +45,16 @@ export function writeTokenCookies(store: CookieStore, tokens: TokenPair): void {
 }
 
 export function clearTokenCookies(store: CookieStore): void {
+  clearAccessTokenCookie(store);
+  store.set(REFRESH_TOKEN_COOKIE, "", expiredCookieOptions());
+}
+
+/** Apaga só o token de acesso. A Sessão continua, e a rota seguinte tenta renová-la. */
+export function clearAccessTokenCookie(store: CookieStore): void {
+  store.set(ACCESS_TOKEN_COOKIE, "", expiredCookieOptions());
+}
+
+function expiredCookieOptions() {
   // O navegador só apaga o cookie se o domínio e o caminho forem os da gravação.
-  const options = { ...tokenCookieOptions(), maxAge: 0 };
-  store.set(ACCESS_TOKEN_COOKIE, "", options);
-  store.set(REFRESH_TOKEN_COOKIE, "", options);
+  return { ...tokenCookieOptions(), maxAge: 0 };
 }

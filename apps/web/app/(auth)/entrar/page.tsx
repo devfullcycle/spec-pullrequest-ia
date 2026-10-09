@@ -3,6 +3,11 @@ import { Suspense } from "react";
 import { AuthCard } from "@/components/auth/auth-card";
 import { Banner } from "@/components/ui/banner";
 import { TextLink } from "@/components/ui/text-link";
+import {
+  EMAIL_VERIFIED_NOTICE,
+  NOTICE_PARAM,
+  SESSION_EXPIRED_NOTICE,
+} from "@/lib/session/login-path";
 import { RETURN_PARAM } from "@/lib/session/return-path";
 import { LoginForm } from "./login-form";
 
@@ -12,14 +17,23 @@ type Props = PageProps<"/entrar">;
 
 /** O aviso que chega de outro fluxo, pelo parâmetro `aviso` da URL. */
 async function Notice({ searchParams }: Props) {
-  const { aviso } = await searchParams;
-  if (aviso !== "email-verificado") return null;
+  const notice = (await searchParams)[NOTICE_PARAM];
 
-  return (
-    <Banner variant="success" layout="narrow">
-      E-mail verificado. Agora você já pode entrar.
-    </Banner>
-  );
+  if (notice === EMAIL_VERIFIED_NOTICE) {
+    return (
+      <Banner variant="success" layout="narrow">
+        E-mail verificado. Agora você já pode entrar.
+      </Banner>
+    );
+  }
+  if (notice === SESSION_EXPIRED_NOTICE) {
+    return (
+      <Banner variant="warning" layout="narrow">
+        Sua sessão expirou. Entre de novo para continuar.
+      </Banner>
+    );
+  }
+  return null;
 }
 
 /** A página pedida antes do login. A Server Action só aceita caminhos internos. */

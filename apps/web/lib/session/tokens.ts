@@ -6,6 +6,7 @@ import {
   REFRESH_TOKEN_COOKIE,
 } from "@/lib/session/access-token";
 import {
+  clearAccessTokenCookie,
   clearTokenCookies,
   writeTokenCookies,
 } from "@/lib/session/token-cookies";
@@ -23,6 +24,11 @@ export async function saveSession(tokens: TokenPair): Promise<void> {
 /** Só funciona numa Server Action ou num Route Handler. */
 export async function clearSession(): Promise<void> {
   clearTokenCookies(await cookies());
+}
+
+/** Só funciona numa Server Action ou num Route Handler. */
+export async function clearAccessToken(): Promise<void> {
+  clearAccessTokenCookie(await cookies());
 }
 
 export async function accessToken(): Promise<string | undefined> {
