@@ -81,6 +81,16 @@ describe('Envio de e-mail por SMTP', () => {
     ).rejects.toThrow(/recebeu 1 e-mail\(s\) .* esperava 2/);
   });
 
+  it('lê os e-mails do mesmo Mailpit mesmo quando o teste troca SMTP_URL', async () => {
+    const to = uniqueEmail();
+    await mailSender.send({ to, subject: 'Antes da troca', text: 'Corpo' });
+    vi.stubEnv('SMTP_URL', 'smtp://127.0.0.1:1');
+
+    const mail = await waitForMailTo(to);
+
+    expect(mail.subject).toBe('Antes da troca');
+  });
+
   it('desiste, no prazo de SMTP_TIMEOUT_MS, de um servidor que aceita a conexão e não responde', async () => {
     // Um servidor mudo neste mesmo contêiner: é o único jeito de provocar a
     // espera, e por isso o host é o endereço local, e não um serviço do Compose.

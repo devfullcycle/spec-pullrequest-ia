@@ -40,6 +40,7 @@ describe('Variáveis de ambiente na subida', () => {
     expect(moduleRef.get(appConfig.KEY)).toEqual({ port: 4321 });
     expect(moduleRef.get(databaseConfig.KEY)).toEqual({
       url: 'postgresql://user:pass@postgres:5432/db',
+      connectTimeoutMs: 10_000,
     });
     expect(moduleRef.get(mailConfig.KEY)).toEqual({
       smtpUrl: 'smtp://mailpit:1025',
@@ -74,6 +75,10 @@ describe('Variáveis de ambiente na subida', () => {
     ['DATABASE_URL', 'mysql://user:pass@mysql:3306/db'],
     ['SMTP_URL', 'mailpit:1025'],
     ['MAIL_FROM', ''],
+    ['MAIL_FROM', 'Gerenciador de Arquivos'],
+    ['MAIL_FROM', 'Nome <nao-responda@>'],
+    ['DATABASE_CONNECT_TIMEOUT_MS', '0'],
+    ['DATABASE_CONNECT_TIMEOUT_MS', 'logo'],
     ['SMTP_TIMEOUT_MS', '0'],
     ['SMTP_TIMEOUT_MS', 'logo'],
     ['JWT_PRIVATE_KEY', 'não é uma chave'],
@@ -86,6 +91,14 @@ describe('Variáveis de ambiente na subida', () => {
       await expect(boot()).rejects.toThrow(invalid(variable));
     },
   );
+
+  it('aceita MAIL_FROM só com o endereço, sem o nome', async () => {
+    vi.stubEnv('MAIL_FROM', 'nao-responda@example.com');
+
+    const moduleRef = await boot();
+
+    expect(moduleRef.get(mailConfig.KEY).from).toBe('nao-responda@example.com');
+  });
 
   it('aponta todas as variáveis com problema de uma vez', async () => {
     vi.stubEnv('DATABASE_URL', undefined);
@@ -132,9 +145,7 @@ describe('Variáveis de ambiente na subida', () => {
           `-----BEGIN ${label}-----\nbmFvIGUgdW1hIGNoYXZl\n-----END ${label}-----`,
         );
 
-        await expect(boot()).rejects.toThrow(
-          new RegExp(`Config validation error: [^]*"${variable}"`),
-        );
+        await expect(boot()).rejects.toThrow(invalid(variable));
       },
     );
 
@@ -151,6 +162,17 @@ describe('Variáveis de ambiente na subida', () => {
 
       await expect(failure).rejects.toThrow(/"JWT_PRIVATE_KEY"/);
       await expect(failure).rejects.toThrow(/"JWT_PUBLIC_KEY"/);
+    });
+
+    it('recusa uma chave pública que não é o par da privada', async () => {
+      const other = generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+      });
+      vi.stubEnv('JWT_PUBLIC_KEY', other.publicKey);
+
+      await expect(boot()).rejects.toThrow(invalid('JWT_PUBLIC_KEY'));
     });
 
     it('recusa a chave privada no lugar da pública', async () => {

@@ -314,5 +314,7 @@ flowchart LR
 - [ ] Observabilidade: logs, métricas e alertas ainda não foram desenhados.
 - [ ] Compatibilidade do `fake-gcs-server` com sessão de upload retomável e URLs assinadas.
 - [ ] Escolha entre Terraform e OpenTofu para a infraestrutura como código.
+- [ ] Forma da `DATABASE_URL` no staging e na produção. A validação da API hoje recusa a URL por socket do Cloud SQL, que tem o host vazio e o caminho do socket no parâmetro `host`. Falta decidir se a API conecta por socket ou por TCP; se for por socket, a validação passa a aceitar essa forma.
+- [ ] Formato das chaves do JWT nos segredos. A validação só aceita o PEM com quebras de linha reais. Falta decidir se o meio que entrega o segredo as preserva, ou se a API passa a aceitar a chave numa linha só, com `\n` escapado.
 - [ ] Migrações do banco no staging e na produção. Falta decidir quem as executa (um passo da esteira antes da publicação, ou uma tarefa do Cloud Run), com qual imagem (a da aplicação, acrescida da ferramenta de migração, ou uma imagem própria), com qual credencial de banco e em que ordem em relação à troca de versão da aplicação, já que a mesma imagem é promovida do staging para a produção.
 - [ ] Prazo, equipe e orçamento, que continuam indefinidos no brief.

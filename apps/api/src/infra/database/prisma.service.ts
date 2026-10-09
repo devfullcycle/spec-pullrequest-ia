@@ -18,7 +18,13 @@ export class PrismaService
   constructor(
     @Inject(databaseConfig.KEY) config: ConfigType<typeof databaseConfig>,
   ) {
-    super({ adapter: new PrismaPg({ connectionString: config.url }) });
+    super({
+      adapter: new PrismaPg({
+        connectionString: config.url,
+        // O padrão do `pg` é esperar para sempre por um banco que não responde.
+        connectionTimeoutMillis: config.connectTimeoutMs,
+      }),
+    });
   }
 
   // Consulta o banco na subida para a aplicação falhar cedo se ele estiver

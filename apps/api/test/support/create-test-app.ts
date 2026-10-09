@@ -28,6 +28,12 @@ export async function createTestApp(
     logger: false,
   });
   configureApp(app);
-  await app.init();
+  try {
+    await app.init();
+  } catch (error) {
+    // Quem chamou não recebe a aplicação para fechar, então ela é fechada aqui.
+    await app.close();
+    throw error;
+  }
   return app;
 }

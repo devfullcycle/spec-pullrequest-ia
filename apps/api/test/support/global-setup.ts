@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import type { TestProject } from 'vitest/node';
-import { loadEnvFile, toTestDatabaseUrl } from './test-env.js';
+import { loadEnvFile, toMailpitApiUrl, toTestDatabaseUrl } from './test-env.js';
 
 /**
  * Roda uma vez por execução da suíte: calcula a URL do banco de testes, cria o
- * banco, se ele ainda não existir, aplica as migrações nele e entrega a URL aos
- * arquivos de teste.
+ * banco, se ele ainda não existir, e aplica as migrações nele. Entrega aos
+ * arquivos de teste os endereços do banco de testes e do Mailpit, que assim não
+ * mudam quando um teste troca uma variável de ambiente.
  */
 export default function setup(project: TestProject): void {
   loadEnvFile();
@@ -17,4 +18,5 @@ export default function setup(project: TestProject): void {
   });
 
   project.provide('testDatabaseUrl', testDatabaseUrl);
+  project.provide('mailpitApiUrl', toMailpitApiUrl(process.env.SMTP_URL));
 }

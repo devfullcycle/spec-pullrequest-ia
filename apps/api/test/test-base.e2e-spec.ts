@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { AddressInfo, createServer, Socket } from 'node:net';
 import { App } from 'supertest/types.js';
 import { appConfig } from '../src/config/app.config.js';
 import { PrismaService } from '../src/infra/database/prisma.service.js';
@@ -47,6 +48,27 @@ describe('Base de testes', () => {
 
     await expect(createTestApp()).rejects.toThrow();
   });
+
+  it('desiste, no prazo de DATABASE_CONNECT_TIMEOUT_MS, de um banco que aceita a conexão e não responde', async () => {
+    // Um servidor mudo neste mesmo contêiner: é o único jeito de provocar a espera.
+    const sockets: Socket[] = [];
+    const silentServer = createServer((socket) => sockets.push(socket));
+    await new Promise<void>((resolve) =>
+      silentServer.listen(0, '127.0.0.1', resolve),
+    );
+    const { port } = silentServer.address() as AddressInfo;
+    vi.stubEnv('DATABASE_URL', `postgresql://app:app@127.0.0.1:${port}/app`);
+    vi.stubEnv('DATABASE_CONNECT_TIMEOUT_MS', '300');
+
+    try {
+      const startedAt = Date.now();
+      await expect(createTestApp()).rejects.toThrow();
+      expect(Date.now() - startedAt).toBeLessThan(3000);
+    } finally {
+      sockets.forEach((socket) => socket.destroy());
+      silentServer.close();
+    }
+  }, 8000);
 
   it('aplica no banco de testes as mesmas migrações do banco de desenvolvimento', async () => {
     const extensions = await app.get(PrismaService).$queryRaw<

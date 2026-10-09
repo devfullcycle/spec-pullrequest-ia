@@ -4,6 +4,8 @@ declare module 'vitest' {
   interface ProvidedContext {
     /** URL do banco de testes, calculada uma vez por execução da suíte. */
     testDatabaseUrl: string;
+    /** Endereço da API HTTP do Mailpit, de onde os testes leem os e-mails enviados. */
+    mailpitApiUrl: string;
   }
 }
 
@@ -38,4 +40,17 @@ export function toTestDatabaseUrl(databaseUrl: string | undefined): string {
   }
   url.pathname += TEST_DATABASE_SUFFIX;
   return url.toString();
+}
+
+/**
+ * Endereço da API HTTP do Mailpit. O host é o mesmo de `SMTP_URL`, para a
+ * leitura cair no servidor que recebe os envios.
+ */
+export function toMailpitApiUrl(smtpUrl: string | undefined): string {
+  if (!smtpUrl) {
+    throw new Error(
+      'SMTP_URL não está definida. Suba o ambiente pelo Compose antes de rodar os testes.',
+    );
+  }
+  return `http://${new URL(smtpUrl).hostname}:8025`;
 }

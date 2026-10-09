@@ -585,6 +585,7 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 | `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | api | Padrões de 15 minutos e 30 dias |
 | `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | api | Credenciais do gateway (segredo) |
 | `SMTP_URL`, `MAIL_FROM` | api | Servidor SMTP do serviço de e-mail (segredo) e remetente. No desenvolvimento, aponta para o `mailpit`. |
+| `DATABASE_CONNECT_TIMEOUT_MS` | api | Quanto esperar o banco para abrir uma conexão, em milissegundos. Padrão de 10000. |
 | `SMTP_TIMEOUT_MS` | api | Quanto esperar o servidor SMTP para resolver o nome, conectar, saudar e responder, em milissegundos. Padrão de 10000. |
 | `WEB_ORIGIN` | api | Origem do frontend, para CORS e links de e-mail |
 | `INTERNAL_API_SECRET` | api e web | Segredo que autoriza a web a repassar o IP do usuário (segredo) |
@@ -592,7 +593,7 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 | `COOKIE_DOMAIN` | web | Domínio dos cookies de token |
 | `COOKIE_SECURE` | web | Padrão `true`. `false` só no desenvolvimento, que usa HTTP. |
 
-**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM` e `SMTP_TIMEOUT_MS`, e todas, menos `PORT` e `SMTP_TIMEOUT_MS`, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, ou que não pode ser lida, impede a subida. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
+**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM`, `SMTP_TIMEOUT_MS` e `DATABASE_CONNECT_TIMEOUT_MS`, e todas, menos `PORT` e os dois prazos, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, que não pode ser lida, ou uma pública que não é o par da privada, impede a subida. O `MAIL_FROM` tem de trazer um endereço de e-mail, sozinho ou como `Nome <endereço>`. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
 
 **Ambiente local:** as variáveis da API ficam em `apps/api/.env`, fora do Git. Na primeira subida, o contêiner da API cria esse arquivo como cópia do `apps/api/.env.example`, que é versionado e funciona sem alterações, e um script gera as chaves do JWT e as grava nele. Os hosts são sempre os nomes dos serviços do Compose.
 
