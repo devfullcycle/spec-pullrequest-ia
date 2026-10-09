@@ -105,6 +105,8 @@ describe('Variáveis de ambiente na subida', () => {
     ['WEB_ORIGIN', 'https://app.example.com/entrar'],
     ['EMAIL_VERIFICATION_TTL_SECONDS', '0'],
     ['EMAIL_VERIFICATION_TTL_SECONDS', 'um dia'],
+    ['REFRESH_TOKEN_REUSE_GRACE_SECONDS', '-1'],
+    ['REFRESH_TOKEN_REUSE_GRACE_SECONDS', 'pouco'],
     ['JWT_PRIVATE_KEY', 'não é uma chave'],
     ['JWT_PUBLIC_KEY', 'não é uma chave'],
   ])(

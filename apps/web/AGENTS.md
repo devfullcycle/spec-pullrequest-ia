@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Estado atual
 
-A base está pronta: os tokens do design system no `app/globals.css`, os componentes que a autenticação usa (`components/ui/` e `components/auth/`), o cliente da API (`lib/api/`), a vitrine (`app/vitrine/`) e os testes no navegador (`e2e/`). Das telas, existem as do cadastro, da verificação de e-mail e a de entrar, em `app/(auth)/`, e a página inicial provisória, em `app/(drive)/`, que mostra o e-mail do Usuário e o botão "Sair". A guarda dos cookies de token (`lib/session`), a camada de acesso a dados (`lib/dal`) e o `proxy.ts` existem, ainda sem a renovação da Sessão. A recuperação de senha **ainda não existe**. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
+A base está pronta: os tokens do design system no `app/globals.css`, os componentes que a autenticação usa (`components/ui/` e `components/auth/`), o cliente da API (`lib/api/`), a vitrine (`app/vitrine/`) e os testes no navegador (`e2e/`). Das telas, existem as do cadastro, da verificação de e-mail e a de entrar, em `app/(auth)/`, e a página inicial provisória, em `app/(drive)/`, que mostra o e-mail do Usuário e o botão "Sair". A guarda dos cookies de token (`lib/session`), a camada de acesso a dados (`lib/dal`) e o `proxy.ts` existem, e o Proxy renova a Sessão quando o token de acesso expira. A recuperação de senha **ainda não existe**. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
 
 ## Comandos
 
@@ -93,7 +93,7 @@ Buscar dados, ler cookies, formatar valores e montar layout não são motivo.
 - **Dados descem por props.** O Server Component busca os dados e passa ao componente de cliente só o que ele mostra. As props atravessam a rede: têm de ser serializáveis e não podem levar token, objeto inteiro da API nem campo que a tela não usa.
 - **Mutação é Server Action.** O componente de cliente não chama a API. Ele dispara uma Server Action.
 - **Estado na URL antes de estado no cliente.** Filtro, ordenação, pasta atual e termo de busca ficam em `params` e `searchParams`, lidos no servidor. Só vira `useState` o que é efêmero, como menu aberto ou item em foco.
-- **Código só de servidor é marcado.** Os módulos de `lib/api` e `lib/dal` e o `lib/session/tokens.ts` começam com `import 'server-only'`, para que um import acidental num componente de cliente quebre o build em vez de vazar código ou segredo. Os outros arquivos de `lib/session` são a exceção, descrita em [Acesso a dados](#acesso-a-dados).
+- **Código só de servidor é marcado.** Os módulos de `lib/api` (fora o `endpoint.ts`) e `lib/dal` e o `lib/session/tokens.ts` começam com `import 'server-only'`, para que um import acidental num componente de cliente quebre o build em vez de vazar código ou segredo. Os outros arquivos de `lib/session` são a exceção, descrita em [Acesso a dados](#acesso-a-dados).
 
 A exceção conhecida é o upload: o navegador envia os chunks direto ao Cloud Storage, e por isso o controle do envio (progresso, pausa e retomada) é de cliente. A sessão de upload continua sendo criada e concluída por Server Action.
 
@@ -103,6 +103,9 @@ A exceção conhecida é o upload: o navegador envia os chunks direto ao Cloud S
 - **Toda leitura protegida passa por `lib/dal`.** É ela que confere a Sessão na API. O Proxy só faz um filtro otimista e nunca substitui essa conferência.
 - **Toda Server Action confere a Sessão de novo.** Uma Server Action é um endpoint público. Esconder o botão na interface não protege nada. A exceção é a de sair, que tem de funcionar com a Sessão já expirada e só age sobre os cookies de quem a chamou.
 - **Página protegida:** lê o Usuário com `getCurrentUser()`, de `lib/dal/user.ts`, dentro de `<Suspense>`. Sem Sessão, a função já leva à tela de entrar.
+- **O Proxy fala com a API por `lib/session/renewal.ts`.** É a única chamada à API fora de `lib/api`, porque o Proxy não pode importar o cliente de lá. Ela só renova a Sessão. O endereço e o prazo da API vêm de `lib/api/endpoint.ts`, o único arquivo de `lib/api` sem `server-only`.
+- **O Proxy não redireciona Server Action.** Com ou sem Sessão, a ação segue e confere a Sessão ela mesma. Um redirecionamento ali vira tela de erro no navegador. O Proxy só renova a Sessão antes dela, se der.
+- **O endereço da tela de entrar sai de `loginPath()`,** de `lib/session/login-path.ts`, que também é dono dos avisos que ela mostra. Ninguém escreve `/entrar?aviso=...` à mão.
 - **Rota nova nasce protegida.** O `proxy.ts` tem a lista das telas de autenticação e a das rotas públicas. Uma rota que abre sem Sessão precisa entrar numa das duas.
 - **O que o Proxy importa não leva `server-only`.** Em `lib/session`, só `tokens.ts` leva: ele lê e grava em `cookies()`. Os outros arquivos (caminhos, destino de retorno, leitura da expiração e gravação dos cookies num armazenamento recebido) não guardam segredo e servem também ao Proxy.
 - **Uma busca por requisição.** Funções de leitura usadas por mais de um componente na mesma página são envolvidas em `React.cache`, que evita a chamada repetida dentro da mesma requisição. Isso não é cache entre requisições e não tem custo de invalidação.
@@ -120,6 +123,7 @@ A exceção conhecida é o upload: o navegador envia os chunks direto ao Cloud S
 - **Sem outro nível de teste:** a web não tem executor de testes de unidade. Enquanto for assim, o cliente de `lib/api` é provado pela rota `/vitrine/api`, e os auxiliares de `e2e/support/`, por um teste próprio na mesma suíte.
 - **Onde ficam:** em `e2e/`, com o sufixo `.spec.ts`. Os auxiliares ficam em `e2e/support/`.
 - **Usuários de teste:** `e2e/support/account.ts` cadastra, verifica e entra pela própria interface (`createVerifiedUser()`, `signIn()`).
+- **Token de acesso expirado:** o teste não espera os 15 minutos. Ele apaga o cookie do token de acesso, que é o que o navegador faz quando o token expira, e deixa o de renovação.
 - **E-mails:** `e2e/support/mailpit.ts` lê os e-mails pelo Mailpit. `uniqueEmail()` cria um destinatário que nenhum outro teste usa, `waitForMailTo()` espera o e-mail chegar e `extractLink()` tira dele o link de um caminho. Nenhum teste apaga a caixa do Mailpit, que também serve ao desenvolvimento.
 - **Seletores:** pelo papel e pelo nome acessível (`getByRole`, `getByLabel`), que é como o Usuário acha o elemento. `data-testid` fica para o que não tem papel nem rótulo.
 

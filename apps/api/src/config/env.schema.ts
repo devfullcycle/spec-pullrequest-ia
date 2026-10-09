@@ -16,6 +16,7 @@ export interface Env {
   EMAIL_VERIFICATION_TTL_SECONDS: number;
   ACCESS_TOKEN_TTL_SECONDS: number;
   REFRESH_TOKEN_TTL_SECONDS: number;
+  REFRESH_TOKEN_REUSE_GRACE_SECONDS: number;
 }
 
 /**
@@ -128,6 +129,8 @@ export const envSchema = Joi.object<Env>({
     .integer()
     .min(1)
     .default(30 * 24 * 60 * 60),
+  // Zero desliga a tolerância: todo reuso de um token trocado é recusado.
+  REFRESH_TOKEN_REUSE_GRACE_SECONDS: Joi.number().integer().min(0).default(10),
 })
   .custom(matchingJwtKeys)
   .messages({

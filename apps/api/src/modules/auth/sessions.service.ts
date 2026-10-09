@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { v7 as uuidv7 } from 'uuid';
 import { AccessTokensService } from '../../common/auth/access-tokens.service.js';
+import { UnauthenticatedError } from '../../common/auth/unauthenticated.error.js';
 import { authConfig } from '../../config/auth.config.js';
 import { UsersService } from '../users/users.service.js';
 import { EmailNotVerifiedError } from './errors/email-not-verified.error.js';
@@ -55,15 +56,45 @@ export class SessionsService {
       userId: user.id,
       sessionId: uuidv7(),
       tokenHash: hashOpaqueToken(refreshToken),
-      expiresAt: new Date(
-        Date.now() + this.config.refreshTokenTtlSeconds * 1000,
-      ),
+      expiresAt: this.refreshTokenExpiry(),
     });
-    return {
-      accessToken,
-      refreshToken,
-      expiresIn: this.config.accessTokenTtlSeconds,
-    };
+    return this.tokenPair(accessToken, refreshToken);
+  }
+
+  /**
+   * Troca o token de renovação por um par novo, na mesma Sessão. Um token já
+   * trocado ainda é aceito durante a janela de tolerância, para não derrubar
+   * quem renova ao mesmo tempo em duas abas. Depois dela, o reuso indica
+   * possível roubo e encerra todas as Sessões do Usuário.
+   */
+  async refresh(refreshToken: string): Promise<TokenPair> {
+    const tokenHash = hashOpaqueToken(refreshToken);
+    const current = await this.refreshTokens.findByHash(tokenHash);
+    if (!current) {
+      throw new UnauthenticatedError();
+    }
+
+    // Assinado antes da troca, pelo mesmo motivo do login.
+    const accessToken = await this.accessTokens.sign(current.userId);
+    const replacement = generateOpaqueToken();
+    const now = new Date();
+    const outcome = await this.refreshTokens.rotate({
+      userId: current.userId,
+      tokenHash,
+      now,
+      reuseAcceptedSince: new Date(
+        now.getTime() - this.config.refreshTokenReuseGraceSeconds * 1000,
+      ),
+      replacement: {
+        id: uuidv7(),
+        tokenHash: hashOpaqueToken(replacement),
+        expiresAt: this.refreshTokenExpiry(),
+      },
+    });
+    if (outcome !== 'rotated') {
+      throw new UnauthenticatedError();
+    }
+    return this.tokenPair(accessToken, replacement);
   }
 
   /**
@@ -72,5 +103,17 @@ export class SessionsService {
    */
   logout(refreshToken: string): Promise<void> {
     return this.refreshTokens.deleteSessionOf(hashOpaqueToken(refreshToken));
+  }
+
+  private refreshTokenExpiry(): Date {
+    return new Date(Date.now() + this.config.refreshTokenTtlSeconds * 1000);
+  }
+
+  private tokenPair(accessToken: string, refreshToken: string): TokenPair {
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: this.config.accessTokenTtlSeconds,
+    };
   }
 }

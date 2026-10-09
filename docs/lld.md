@@ -430,14 +430,16 @@ stateDiagram-v2
 - **Token de acesso:** JWT com `sub` (id do usuário) e `exp`, assinado com RS256 e validado só pela assinatura.
 - **Token de renovação:** valor opaco de 256 bits, guardado só como hash. Cada renovação emite um novo par e marca o token antigo como trocado.
 - **Sessão:** é o login de um usuário em um navegador. Todos os tokens de renovação emitidos a partir de um mesmo login carregam o mesmo `session_id`. Sair apaga todos os tokens da Sessão. Não há limite de Sessões simultâneas por usuário.
-- **Reuso de um token já trocado:** todas as Sessões do usuário são encerradas, por indicar possível roubo. Para não derrubar requisições que renovam ao mesmo tempo, o token antigo continua aceito por 10 segundos depois da troca.
+- **Reuso de um token já trocado:** todas as Sessões do usuário são encerradas, por indicar possível roubo, e a resposta é `unauthenticated`. Isso vale mesmo que o token trocado já tenha expirado. Para não derrubar requisições que renovam ao mesmo tempo, o token antigo continua aceito por 10 segundos depois da troca. A janela conta da primeira troca, não se estica com os usos seguintes e fecha no décimo segundo, inclusive. O reuso e o encerramento das Sessões valem juntos, na mesma transação.
+- **Token de renovação inexistente ou expirado:** a renovação responde `unauthenticated`, sem encerrar nenhuma Sessão.
 - **Renovações simultâneas:** dentro dos 10 segundos, cada chamada com o token antigo recebe um par novo e válido, na mesma Sessão. A cadeia bifurca, o último cookie gravado vence e os tokens que sobram expiram sozinhos.
+- **Trocas e encerramentos em fila:** a renovação, o logout e o encerramento de todas as Sessões de um mesmo usuário rodam um por vez no banco. Assim, uma renovação que corre junto com o logout não deixa um token novo numa Sessão que acabou de ser apagada.
 - **Cookies no Next.js:** os dois tokens ficam em cookies `HttpOnly`, `Secure` e `SameSite=Lax`. O `Secure` é desligado por `COOKIE_SECURE=false` no ambiente local, que usa HTTP. O cookie do token de acesso dura o mesmo que o token, e o do token de renovação, 30 dias, a validade padrão dele.
-- **Renovação no `proxy.ts`:** antes de cada rota, o Proxy lê o `exp` do token de acesso, sem conferir a assinatura. Se ele expirou, o Proxy chama `/auth/refresh` e regrava os cookies. Se a renovação falha, ele apaga os cookies e redireciona para o login, com o aviso "Sua sessão expirou". O Proxy também manda para o login quem não tem Sessão e tira das telas `(auth)` quem tem.
-- **Verificação na web:** a web não tem a chave pública nem valida o JWT. Toda página e Server Action protegida passa pela camada de acesso a dados (`lib/dal`), que chama `GET /me`. Um `401` ali derruba a Sessão: como a renderização de uma página não pode apagar cookies, a camada leva à rota `/sessao-encerrada`, que confere a Sessão de novo na API, apaga os cookies e leva ao login. O Proxy é só um filtro otimista, nunca a única barreira.
+- **Renovação no `proxy.ts`:** antes de cada rota, o Proxy lê o `exp` do token de acesso, sem conferir a assinatura. Se ele expirou, o Proxy chama `/auth/refresh` e regrava os cookies. O token conta como expirado 5 segundos antes do `exp`, para não vencer no caminho até a API. Os tokens novos seguem também na requisição, para a rota já renderizar com eles. O Proxy espera a renovação por 5 segundos, menos que a janela de tolerância: se a API troca o token e a resposta se perde, a tentativa seguinte ainda é aceita. Se a API recusa o token de renovação, ele apaga os cookies e redireciona para o login, com o aviso "Sua sessão expirou" (`/entrar?aviso=sessao-expirada`). Se a API falha, a Sessão não é encerrada: os cookies ficam, a pessoa vai para o login sem o aviso, e a rota seguinte tenta renovar de novo. O Proxy também manda para o login quem não tem Sessão e tira das telas `(auth)` quem tem.
+- **Server Actions no Proxy:** uma Server Action não é redirecionada pelo Proxy, porque o navegador repetiria o envio na tela de entrar e mostraria um erro. Com ou sem Sessão, ela segue, e é a própria ação que confere a Sessão. É o que deixa o "Sair" funcionar com a Sessão já expirada.
+- **Verificação na web:** a web não tem a chave pública nem valida o JWT. Toda página e Server Action protegida passa pela camada de acesso a dados (`lib/dal`), que chama `GET /me`. Um `401` ali derruba a Sessão: como a renderização de uma página não pode apagar cookies, a camada leva à rota `/sessao-encerrada`, que confere a Sessão de novo na API e tenta renová-la. Se a renovação passa, a pessoa volta ao produto com o par novo. Se a API recusa o token de renovação, a rota apaga os cookies e leva ao login, com o mesmo aviso. O Proxy é só um filtro otimista, nunca a única barreira.
 - **Volta ao destino:** quem é barrado numa rota protegida volta para ela depois de entrar. O Proxy leva a página pedida no parâmetro `destino` da tela de entrar. O destino só aceita caminhos internos, e qualquer outro valor leva à página inicial.
 - **Rotas protegidas por padrão:** o Proxy tem a lista das telas de autenticação e a das rotas públicas. Toda rota fora das duas exige Sessão.
-- **Enquanto a renovação não existe:** o Proxy ainda não chama `/auth/refresh`. Um token de acesso expirado apaga os cookies e leva ao login, sem o aviso.
 
 ### 4.6 Upload em chunks
 
@@ -555,6 +557,7 @@ O worker é a mesma imagem da API, publicada como um serviço separado do Cloud 
 | --- | --- |
 | Token de acesso | 15 minutos |
 | Token de renovação | 30 dias, com rotação a cada uso |
+| Tolerância ao reuso de um token de renovação trocado | 10 segundos |
 | Token de acesso a link com senha | 15 minutos |
 | Senha | De 10 a 128 caracteres, sem regra de composição, com hash Argon2id |
 | Tentativas de login | 5 por e-mail e 20 por IP a cada 15 minutos |
@@ -568,7 +571,7 @@ O worker é a mesma imagem da API, publicada como um serviço separado do Cloud 
 | Tolerância de pagamento | 7 dias |
 | Profundidade de pastas | 50 níveis |
 
-A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são lidos de variáveis de ambiente. Os valores da tabela são os padrões de produção, e o ambiente local pode reduzi-los para testar.
+A retenção da lixeira, o prazo de upload pendente, a validade dos tokens e a tolerância ao reuso são lidos de variáveis de ambiente. Os valores da tabela são os padrões de produção, e o ambiente local pode reduzi-los para testar.
 
 **CORS**
 
@@ -588,6 +591,7 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 | `STORAGE_EMULATOR_HOST` | api | Endereço do emulador de storage, só no desenvolvimento |
 | `TRASH_RETENTION_DAYS`, `PENDING_UPLOAD_TTL_HOURS` | api | Padrões de 30 dias e 24 horas |
 | `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS` | api | Validade do token de acesso e do token de renovação, em segundos. Padrões de 900 (15 minutos) e 2592000 (30 dias). |
+| `REFRESH_TOKEN_REUSE_GRACE_SECONDS` | api | Por quanto tempo um token de renovação já trocado ainda é aceito, em segundos. Padrão de 10. Zero desliga a tolerância. |
 | `EMAIL_VERIFICATION_TTL_SECONDS` | api | Validade do link de verificação de e-mail, em segundos. Padrão de 86400 (24 horas). |
 | `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | api | Credenciais do gateway (segredo) |
 | `SMTP_URL`, `MAIL_FROM` | api | Servidor SMTP do serviço de e-mail (segredo) e remetente. No desenvolvimento, aponta para o `mailpit`. |
@@ -600,7 +604,7 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 | `COOKIE_DOMAIN` | web | Domínio dos cookies de token |
 | `COOKIE_SECURE` | web | Padrão `true`. `false` só no desenvolvimento, que usa HTTP. |
 
-**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM`, `SMTP_TIMEOUT_MS`, `SMTP_IDLE_TIMEOUT_MS`, `DATABASE_CONNECT_TIMEOUT_MS`, `WEB_ORIGIN`, `EMAIL_VERIFICATION_TTL_SECONDS`, `ACCESS_TOKEN_TTL_SECONDS` e `REFRESH_TOKEN_TTL_SECONDS`, e todas, menos `PORT`, os quatro prazos e as três validades, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, que não pode ser lida, ou uma pública que não é o par da privada, impede a subida. O `MAIL_FROM` tem de trazer um endereço de e-mail, sozinho ou como `Nome <endereço>`. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
+**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM`, `SMTP_TIMEOUT_MS`, `SMTP_IDLE_TIMEOUT_MS`, `DATABASE_CONNECT_TIMEOUT_MS`, `WEB_ORIGIN`, `EMAIL_VERIFICATION_TTL_SECONDS`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS` e `REFRESH_TOKEN_REUSE_GRACE_SECONDS`, e todas, menos `PORT`, os quatro prazos, as três validades e a janela de tolerância, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, que não pode ser lida, ou uma pública que não é o par da privada, impede a subida. O `MAIL_FROM` tem de trazer um endereço de e-mail, sozinho ou como `Nome <endereço>`. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
 
 **Ambiente local:** as variáveis da API ficam em `apps/api/.env`, fora do Git. Na primeira subida, o contêiner da API cria esse arquivo como cópia do `apps/api/.env.example`, que é versionado e funciona sem alterações, e um script gera as chaves do JWT e as grava nele. Quando o `.env.example` ganha uma variável, o mesmo script a acrescenta ao `.env` que já existe, sem trocar nenhum valor. Os hosts são sempre os nomes dos serviços do Compose. A `API_URL` e o `COOKIE_SECURE=false` da web são definidos no próprio `compose.dev.yaml`, sem arquivo `.env`.
 

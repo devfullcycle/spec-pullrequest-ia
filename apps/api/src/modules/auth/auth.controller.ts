@@ -1,6 +1,7 @@
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
 import { LoginDto } from './dto/login.dto.js';
 import { LogoutDto } from './dto/logout.dto.js';
+import { RefreshDto } from './dto/refresh.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { ResendVerificationDto } from './dto/resend-verification.dto.js';
 import { VerifyEmailDto } from './dto/verify-email.dto.js';
@@ -36,6 +37,12 @@ export class AuthController {
   @HttpCode(200)
   login(@Body() body: LoginDto): Promise<TokenPair> {
     return this.sessions.login(body.email, body.password);
+  }
+
+  @Post('refresh')
+  @HttpCode(200)
+  refresh(@Body() body: RefreshDto): Promise<TokenPair> {
+    return this.sessions.refresh(body.refreshToken);
   }
 
   @Post('logout')

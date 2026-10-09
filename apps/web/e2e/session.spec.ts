@@ -1,4 +1,9 @@
-import { expect, test, type BrowserContext } from "@playwright/test";
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+} from "@playwright/test";
 import {
   createVerifiedUser,
   fillLogin,
@@ -10,7 +15,9 @@ import {
 import { requiredEnv } from "./support/env";
 import { uniqueEmail, waitForMailTo } from "./support/mailpit";
 
-const TOKEN_COOKIES = ["access_token", "refresh_token"];
+const ACCESS_COOKIE = "access_token";
+const REFRESH_COOKIE = "refresh_token";
+const TOKEN_COOKIES = [ACCESS_COOKIE, REFRESH_COOKIE];
 
 /** Um JWT que ninguém assinou, com a expiração pedida. A web não confere a assinatura. */
 function unsignedToken(expiresInSeconds: number): string {
@@ -26,18 +33,43 @@ function unsignedToken(expiresInSeconds: number): string {
   ].join(".");
 }
 
-/** Põe no navegador os cookies de uma Sessão que a API nunca abriu. */
-async function plantSession(context: BrowserContext, accessToken: string) {
+const SESSION_EXPIRED = "Sua sessão expirou. Entre de novo para continuar.";
+
+/** Põe no navegador os cookies de uma Sessão. Sem o token de renovação, vai um que a API nunca emitiu. */
+async function plantSession(
+  context: BrowserContext,
+  tokens: { accessToken?: string; refreshToken?: string },
+) {
   const url = requiredEnv("WEB_URL");
+  const { accessToken, refreshToken = "token-que-nunca-existiu" } = tokens;
   await context.addCookies([
-    { name: TOKEN_COOKIES[0], value: accessToken, url, httpOnly: true },
-    {
-      name: TOKEN_COOKIES[1],
-      value: "token-que-nunca-existiu",
-      url,
-      httpOnly: true,
-    },
+    ...(accessToken
+      ? [{ name: ACCESS_COOKIE, value: accessToken, url, httpOnly: true }]
+      : []),
+    { name: REFRESH_COOKIE, value: refreshToken, url, httpOnly: true },
   ]);
+}
+
+/**
+ * Deixa o navegador como ele fica quando o token de acesso expira: o cookie dele dura o mesmo
+ * que o token e some, e o do token de renovação continua.
+ */
+async function expireAccessToken(context: BrowserContext) {
+  await context.clearCookies({ name: ACCESS_COOKIE });
+}
+
+/** A tela de entrar, com o aviso de que a Sessão acabou e sem mais nada na URL. */
+async function expectSessionExpiredNotice(page: Page) {
+  await expect(page).toHaveURL(/\/entrar\?aviso=sessao-expirada$/);
+  await expect(page.getByRole("status")).toHaveText(SESSION_EXPIRED);
+}
+
+async function refreshTokenOf(context: BrowserContext): Promise<string> {
+  const cookie = (await context.cookies()).find(
+    ({ name }) => name === REFRESH_COOKIE,
+  );
+  if (!cookie) throw new Error("O navegador não tem o cookie de renovação.");
+  return cookie.value;
 }
 
 async function tokenCookies(context: BrowserContext) {
@@ -250,15 +282,154 @@ test("uma rota com ponto no nome também passa pelo Proxy", async ({ page }) => 
   );
 });
 
-test("um token de acesso expirado leva à tela de entrar e apaga os cookies", async ({
+test("com o token de acesso expirado e o de renovação válido, a navegação segue sem passar pela tela de entrar", async ({
   page,
   context,
 }) => {
-  await plantSession(context, unsignedToken(-60));
+  const email = uniqueEmail();
+  await signIn(page, email);
+  const previous = await refreshTokenOf(context);
+  await expireAccessToken(context);
+
+  await page.goto("/?origem=teste");
+
+  await expect(page).toHaveURL(/\/\?origem=teste$/);
+  await expect(page.getByText(email)).toBeVisible();
+  // A renovação trocou o par: os dois cookies voltaram, e o de renovação é outro.
+  const cookies = await tokenCookies(context);
+  expect(cookies.map(({ name }) => name).sort()).toEqual(TOKEN_COOKIES);
+  expect(await refreshTokenOf(context)).not.toBe(previous);
+  for (const cookie of cookies) {
+    expect(cookie.httpOnly, `${cookie.name} é HttpOnly`).toBe(true);
+  }
+});
+
+test("um token de acesso expirado que ainda está no cookie também é renovado", async ({
+  page,
+  context,
+}) => {
+  const email = uniqueEmail();
+  await signIn(page, email);
+  await plantSession(context, {
+    accessToken: unsignedToken(-60),
+    refreshToken: await refreshTokenOf(context),
+  });
 
   await page.goto("/");
 
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText(email)).toBeVisible();
+});
+
+test("abrir a tela de entrar com o token de acesso expirado e a Sessão válida leva ao produto", async ({
+  page,
+  context,
+}) => {
+  const email = uniqueEmail();
+  await signIn(page, email);
+  await expireAccessToken(context);
+
+  await page.goto("/entrar");
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText(email)).toBeVisible();
+});
+
+test("duas abas navegando ao mesmo tempo com o token de acesso expirado continuam com Sessão", async ({
+  page,
+  context,
+}) => {
+  const email = uniqueEmail();
+  await signIn(page, email);
+  const otherTab = await context.newPage();
+  await expireAccessToken(context);
+
+  await Promise.all([page.goto("/?aba=1"), otherTab.goto("/?aba=2")]);
+
+  await expect(page).toHaveURL(/\/\?aba=1$/);
+  await expect(otherTab).toHaveURL(/\/\?aba=2$/);
+  await expect(page.getByText(email)).toBeVisible();
+  await expect(otherTab.getByText(email)).toBeVisible();
+  // O cookie que ficou, de qualquer uma das duas renovações, ainda renova.
+  await expireAccessToken(context);
+  await page.goto("/?aba=1");
+  await expect(page).toHaveURL(/\/\?aba=1$/);
+  await expect(page.getByText(email)).toBeVisible();
+});
+
+test("com a Sessão revogada, os cookies são apagados e a tela de entrar mostra o aviso de sessão expirada", async ({
+  page,
+  context,
+}) => {
+  const email = uniqueEmail();
+  await signIn(page, email);
+  const revoked = await refreshTokenOf(context);
+  // Sair encerra a Sessão na API. O navegador volta a ter o token dela, como outro aparelho teria.
+  await page.getByRole("button", { name: "Sair" }).click();
   await expect(page).toHaveURL(/\/entrar$/);
+  await plantSession(context, { refreshToken: revoked });
+
+  await page.goto("/?origem=teste");
+
+  await expect(page).toHaveURL(
+    /\/entrar\?aviso=sessao-expirada&destino=%2F%3Forigem%3Dteste$/,
+  );
+  await expect(page.getByRole("status")).toHaveText(SESSION_EXPIRED);
+  expect(await tokenCookies(context)).toEqual([]);
+
+  // O aviso não atrapalha a volta ao destino.
+  await fillLogin(page, email);
+  await expect(page).toHaveURL(/\/\?origem=teste$/);
+  await expect(page.getByText(email)).toBeVisible();
+});
+
+test("sair com o token de acesso expirado encerra a Sessão na API e apaga os cookies", async ({
+  page,
+  context,
+}) => {
+  await signIn(page, uniqueEmail());
+  const beforeLogout = await refreshTokenOf(context);
+  await expireAccessToken(context);
+
+  await page.getByRole("button", { name: "Sair" }).click();
+
+  await expect(page).toHaveURL(/\/entrar$/);
+  expect(await tokenCookies(context)).toEqual([]);
+  // A Sessão acabou na API, e não só neste navegador: o token dela não renova mais.
+  await plantSession(context, { refreshToken: beforeLogout });
+  await page.goto("/");
+  await expectSessionExpiredNotice(page);
+});
+
+test("sair com a Sessão já revogada leva à tela de entrar e apaga os cookies", async ({
+  page,
+  context,
+}) => {
+  await signIn(page, uniqueEmail());
+  const otherTab = await context.newPage();
+  await otherTab.goto("/");
+  const revoked = await refreshTokenOf(context);
+  await otherTab.getByRole("button", { name: "Sair" }).click();
+  await expect(otherTab).toHaveURL(/\/entrar$/);
+  // A primeira aba continua na página do produto, com os cookies de uma Sessão que acabou.
+  await plantSession(context, { refreshToken: revoked });
+
+  await page.getByRole("button", { name: "Sair" }).click();
+
+  await expect(page).toHaveURL(/\/entrar/);
+  await expect(page.getByRole("heading", { name: "Entrar" })).toBeVisible();
+  expect(await tokenCookies(context)).toEqual([]);
+});
+
+test("um token de renovação que a API não conhece leva à tela de entrar com o aviso e apaga os cookies", async ({
+  page,
+  context,
+}) => {
+  await plantSession(context, { accessToken: unsignedToken(-60) });
+
+  await page.goto("/");
+
+  await expectSessionExpiredNotice(page);
   expect(await tokenCookies(context)).toEqual([]);
 });
 
@@ -267,13 +438,45 @@ test("um token que só parece válido não passa da camada de acesso a dados", a
   context,
 }) => {
   // O Proxy vê uma expiração futura e deixa passar. Quem barra é a API, pela assinatura.
-  await plantSession(context, unsignedToken(600));
+  await plantSession(context, { accessToken: unsignedToken(600) });
 
   await page.goto("/");
 
-  await expect(page).toHaveURL(/\/entrar$/);
+  await expectSessionExpiredNotice(page);
   await expect(page.getByRole("heading", { name: "Entrar" })).toBeVisible();
   expect(await tokenCookies(context)).toEqual([]);
+});
+
+test("a rota que encerra a Sessão renova, em vez de deslogar, quem só está com o token de acesso expirado", async ({
+  page,
+  context,
+}) => {
+  const email = uniqueEmail();
+  await signIn(page, email);
+  await expireAccessToken(context);
+
+  await page.goto("/sessao-encerrada");
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText(email)).toBeVisible();
+});
+
+test("um token de acesso que a API recusa é trocado pela renovação, sem derrubar a Sessão", async ({
+  page,
+  context,
+}) => {
+  const email = uniqueEmail();
+  await signIn(page, email);
+  // O Proxy vê uma expiração futura e não renova. Quem recusa o token é a API.
+  await plantSession(context, {
+    accessToken: unsignedToken(600),
+    refreshToken: await refreshTokenOf(context),
+  });
+
+  await page.goto("/");
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText(email)).toBeVisible();
 });
 
 test("a rota que encerra a Sessão não desloga quem tem uma Sessão boa", async ({

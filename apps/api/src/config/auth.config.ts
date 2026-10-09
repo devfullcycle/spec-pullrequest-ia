@@ -13,5 +13,7 @@ export const authConfig = registerAs('auth', () => {
     accessTokenTtlSeconds: env.ACCESS_TOKEN_TTL_SECONDS,
     /** Validade do token de renovação. */
     refreshTokenTtlSeconds: env.REFRESH_TOKEN_TTL_SECONDS,
+    /** Por quanto tempo um token de renovação já trocado ainda é aceito. */
+    refreshTokenReuseGraceSeconds: env.REFRESH_TOKEN_REUSE_GRACE_SECONDS,
   };
 });

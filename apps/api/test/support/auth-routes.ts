@@ -39,6 +39,7 @@ export function authRoutes(app: INestApplication<App>) {
   const login = (email: string, password = PASSWORD) =>
     post('login', { email, password });
   const logout = (refreshToken: string) => post('logout', { refreshToken });
+  const refresh = (refreshToken: string) => post('refresh', { refreshToken });
 
   /** Cadastra o e-mail e devolve o token do link de verificação que chegou. */
   const registerAndGetToken = async (email: string) => {
@@ -51,14 +52,28 @@ export function authRoutes(app: INestApplication<App>) {
     await verifyEmail(await registerAndGetToken(email)).expect(204);
   };
 
+  /** Deixa um Usuário verificado com uma Sessão aberta e devolve o par de tokens dela. */
+  const openSession = async (
+    email: string,
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+  }> => {
+    await registerVerified(email);
+    return (await login(email).expect(200)).body;
+  };
+
   return {
     register,
     verifyEmail,
     resendVerification,
     login,
     logout,
+    refresh,
     registerAndGetToken,
     registerVerified,
+    openSession,
     /** `GET /me`, com o token de acesso no cabeçalho quando ele é passado. */
     me: (accessToken?: string) => {
       const call = request(app.getHttpServer()).get('/v1/me');
@@ -71,6 +86,15 @@ export function authRoutes(app: INestApplication<App>) {
         title: 'Bad Request',
         status: 400,
         code: 'invalid_token',
+        detail: expect.any(String),
+      });
+    },
+    /** A renovação recusa o token com `unauthenticated`. */
+    expectRefreshRejected: async (refreshToken: string) => {
+      expectProblem(await refresh(refreshToken).expect(401), {
+        title: 'Unauthorized',
+        status: 401,
+        code: 'unauthenticated',
         detail: expect.any(String),
       });
     },

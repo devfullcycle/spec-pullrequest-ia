@@ -1,5 +1,6 @@
 import "server-only";
 import { unstable_rethrow } from "next/navigation";
+import { API_TIMEOUT_MS, apiEndpoint } from "@/lib/api/endpoint";
 import {
   API_ERROR_CODES,
   type ApiError,
@@ -7,9 +8,6 @@ import {
   type ApiFieldError,
   type ApiResult,
 } from "@/lib/api/types";
-
-/** Quanto esperar a API, em milissegundos. O mesmo padrão dos prazos da própria API. */
-const DEFAULT_TIMEOUT_MS = 10_000;
 
 interface ApiRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -35,7 +33,7 @@ export async function apiRequest<T = void>(
     method = "GET",
     body,
     accessToken,
-    timeoutMs = DEFAULT_TIMEOUT_MS,
+    timeoutMs = API_TIMEOUT_MS,
   }: ApiRequestOptions = {},
 ): Promise<ApiResult<T>> {
   const headers = new Headers({ Accept: "application/json" });
@@ -43,7 +41,7 @@ export async function apiRequest<T = void>(
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
   // Fora do `try`: sem a variável, o erro é de configuração, e não uma falha da API.
-  const url = `${apiUrl()}/v1${path}`;
+  const url = apiEndpoint(path);
 
   let response: Response;
   try {
@@ -73,16 +71,6 @@ export async function apiRequest<T = void>(
     console.error(`A resposta de ${method} ${path} não pôde ser lida.`, cause);
     return { ok: false, error: unexpectedError(502) };
   }
-}
-
-function apiUrl(): string {
-  const url = process.env.API_URL;
-  if (!url) {
-    throw new Error(
-      "A variável de ambiente API_URL não está definida (docs/lld.md, seção 6).",
-    );
-  }
-  return url.replace(/\/+$/, "");
 }
 
 /** Lê o corpo RFC 9457 da API. O `code` é o único campo que decide o erro. */
