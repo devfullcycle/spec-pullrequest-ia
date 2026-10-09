@@ -73,6 +73,16 @@ class ProbeController {
     });
   }
 
+  // Um erro de terceiro com o mesmo formato dos erros do leitor do corpo.
+  @Get('third-party-error-like-body-reader')
+  thirdPartyErrorLikeBodyReader() {
+    throw Object.assign(new Error('recurso interno hunter2 não existe'), {
+      expose: true,
+      type: 'sdk_error',
+      statusCode: 404,
+    });
+  }
+
   @Get('deliberate-503')
   deliberate503() {
     throw new ServiceUnavailableException('fila interna hunter2 fora do ar');
@@ -182,6 +192,19 @@ describe('Formato de erro da API (RFC 9457)', () => {
       });
     });
 
+    it('recusa um corpo grande demais com o status do leitor do corpo', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/v1/probe/validated')
+        .send({ email: 'ana@example.com', filler: 'x'.repeat(200_000) })
+        .expect(413);
+
+      expectProblem(response, {
+        title: 'Payload Too Large',
+        status: 413,
+        code: 'payload_too_large',
+      });
+    });
+
     it('aceita a entrada válida e descarta os campos desconhecidos', async () => {
       await request(app.getHttpServer())
         .post('/v1/probe/validated')
@@ -241,17 +264,20 @@ describe('Formato de erro da API (RFC 9457)', () => {
       expect(response.text).not.toContain('stack');
     });
 
-    it('não confia no statusCode de um erro que não veio do framework', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/v1/probe/third-party-error')
-        .expect(500);
+    it.each(['third-party-error', 'third-party-error-like-body-reader'])(
+      'não confia no statusCode de um erro que não veio do framework (%s)',
+      async (route) => {
+        const response = await request(app.getHttpServer())
+          .get(`/v1/probe/${route}`)
+          .expect(500);
 
-      expectProblem(response, {
-        title: 'Internal Server Error',
-        status: 500,
-        code: 'internal_error',
-      });
-    });
+        expectProblem(response, {
+          title: 'Internal Server Error',
+          status: 500,
+          code: 'internal_error',
+        });
+      },
+    );
 
     it.each(['redirect-as-exception', 'status-out-of-range'])(
       'trata como inesperada uma HttpException cujo status não é de erro (%s)',

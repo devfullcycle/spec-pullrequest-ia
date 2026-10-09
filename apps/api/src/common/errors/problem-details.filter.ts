@@ -56,6 +56,22 @@ const CODE_BY_FRAMEWORK_STATUS: Record<number, string> = {
 };
 
 /**
+ * Os erros que o leitor do corpo do Express (`body-parser` e `raw-body`) levanta
+ * por culpa da requisição, pelo campo `type`. A lista é fechada de propósito: o
+ * formato sozinho (`expose`, `type`, `statusCode`) não prova de onde o erro veio.
+ */
+const BODY_READER_ERROR_TYPES = new Set([
+  'charset.unsupported',
+  'encoding.unsupported',
+  'entity.parse.failed',
+  'entity.too.large',
+  'entity.verify.failed',
+  'parameters.too.many',
+  'request.aborted',
+  'request.size.invalid',
+]);
+
+/**
  * Único lugar onde a resposta HTTP de erro é desenhada. Toda falha sai em
  * `application/problem+json`, e o que não foi previsto vira um 500 sem
  * detalhes.
@@ -131,7 +147,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
  * - `HttpException`, do Nest ou lançada de propósito pelo código, desde que o
  *   status seja de erro (4xx ou 5xx);
  * - erro do leitor do corpo do Express (JSON malformado, corpo grande demais),
- *   que vem marcado com `expose`, `type` e um status 4xx.
+ *   reconhecido pelo `type`, que tem de ser um dos que o leitor levanta.
  *
  * Qualquer outro erro é inesperado, mesmo que traga um `statusCode`: o SDK de um
  * fornecedor costuma repassar ali o status da chamada que ele fez, e esse status
@@ -149,6 +165,7 @@ function frameworkStatus(exception: unknown): number | undefined {
     if (
       expose === true &&
       typeof type === 'string' &&
+      BODY_READER_ERROR_TYPES.has(type) &&
       typeof statusCode === 'number' &&
       Number.isInteger(statusCode) &&
       statusCode >= 400 &&
