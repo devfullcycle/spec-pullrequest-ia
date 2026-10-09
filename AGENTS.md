@@ -89,6 +89,8 @@ A regra vale para variáveis de ambiente, arquivos de configuração e código q
 
 O Figma é a ferramenta de design do projeto, acessada pelo servidor MCP do plugin `figma`.
 
+**Arquivo do Figma:** <https://www.figma.com/design/wtW40yW0bpzoLvICwZMELG/Gerenciador-de-arquivos>
+
 **Sempre que a tarefa envolver design ou interface, leia antes o `docs/design-system.md`**, seja para desenhar no Figma, seja para implementar uma tela ou um componente no código. Ele define os tokens, os componentes e o fluxo de trabalho com o Figma (sincronia, passos do Figma para o código, assets e validação visual), e as regras dele são obrigatórias.
 
 ## Definição de pronto
