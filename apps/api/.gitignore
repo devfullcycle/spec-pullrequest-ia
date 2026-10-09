@@ -3,6 +3,9 @@
 /node_modules
 *.tsbuildinfo
 
+# Prisma client, gerado por `prisma generate`
+/src/generated
+
 # tests
 /coverage
 

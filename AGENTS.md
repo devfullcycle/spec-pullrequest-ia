@@ -25,22 +25,50 @@ Cada projeto tem o próprio `AGENTS.md`, com os comandos, as particularidades da
 
 Tudo roda dentro dos contêineres do Docker Compose: instalação de dependências, servidor de desenvolvimento, testes, lint, compilação do TypeScript e qualquer outro comando do projeto. **Nunca rode `pnpm`, `node` ou `npx` direto na máquina.**
 
-O ambiente de desenvolvimento usa o `compose.dev.yaml`, na raiz. Cada contêiner instala as dependências ao subir (`pnpm install`) e depois fica parado, sem iniciar a aplicação. A `node_modules` é criada na pasta do projeto, montada da máquina, e não num volume do Docker. Os comandos são executados nele com `docker compose exec`.
+O ambiente de desenvolvimento usa o `compose.dev.yaml`, na raiz, com quatro serviços:
+
+| Serviço | O que é | Endereço na máquina | Endereço entre contêineres |
+| --- | --- | --- | --- |
+| `web` | Frontend em Next.js | `http://localhost:3000` | `http://web:3000` |
+| `api` | API em NestJS | `http://localhost:3001` | `http://api:3000` |
+| `postgres` | Banco PostgreSQL (usuário, senha e banco `app`) | Não é publicado | `postgres:5432` |
+| `mailpit` | Captura os e-mails enviados e os mostra numa tela | `http://localhost:8025` | SMTP em `mailpit:1025` e API HTTP em `http://mailpit:8025` |
+
+Os contêineres `web` e `api` preparam o próprio ambiente ao subir e depois ficam parados, sem iniciar a aplicação. A `node_modules` é criada na pasta do projeto, montada da máquina, e não num volume do Docker. Os comandos são executados neles com `docker compose exec`.
+
+Na subida, o contêiner `api` faz sozinho, nesta ordem:
+
+1. Instala as dependências (`pnpm install`).
+2. Cria o `apps/api/.env` a partir do `apps/api/.env.example`, se ele ainda não existir.
+3. Gera o par de chaves do JWT e o grava no `.env`, se ele ainda não tiver as chaves.
+4. Gera o cliente do Prisma e aplica as migrações pendentes no banco.
+
+Nenhum desses passos é manual. O `.env` fica fora do Git, e o `.env.example`, que é versionado, funciona sem alterações.
 
 **Iniciar o projeto**
 
 ```bash
-docker compose -f compose.dev.yaml up -d --build
+docker compose -f compose.dev.yaml up -d --build --wait
 docker compose -f compose.dev.yaml exec web pnpm dev --hostname 0.0.0.0
 docker compose -f compose.dev.yaml exec api pnpm start:dev
 ```
 
-Na primeira subida, a instalação das dependências leva algum tempo. Acompanhe com `docker compose -f compose.dev.yaml logs -f` e só inicie as aplicações depois do `Done` do pnpm.
+O `--wait` segura o primeiro comando até os quatro serviços ficarem prontos, o que inclui a instalação das dependências e as migrações. Na primeira subida, isso leva alguns minutos. Se ele terminar com erro, veja a causa com `docker compose -f compose.dev.yaml logs api`.
+
+Quando a preparação da API falha (uma migração quebrada, um `.env` incompleto), o contêiner `api` encerra e o `exec` deixa de funcionar nele. Para consertar, rode o comando num contêiner avulso, que não passa pela preparação:
+
+```bash
+docker compose -f compose.dev.yaml run --rm api <comando>
+```
+
+Depois do conserto, suba o ambiente de novo.
 
 Os dois últimos comandos ficam presos ao terminal, então rode cada um num terminal próprio.
 
 - **Web:** responde em `http://localhost:3000`. O `--hostname 0.0.0.0` é necessário para que ela aceite conexões de fora do contêiner.
-- **API:** responde em `http://localhost:3001` na máquina. Entre contêineres, o endereço é `http://api:3000`.
+- **API:** responde em `http://localhost:3001` na máquina, com as rotas sob `/v1`.
+- **E-mails:** tudo o que a API envia aparece em `http://localhost:8025`.
+- **Banco:** para abrir um console SQL, rode `docker compose -f compose.dev.yaml exec postgres psql -U app app`.
 
 **Derrubar o projeto**
 
@@ -48,7 +76,15 @@ Os dois últimos comandos ficam presos ao terminal, então rode cada um num term
 docker compose -f compose.dev.yaml down
 ```
 
-As dependências instaladas continuam na pasta do projeto e são reaproveitadas na próxima subida.
+As dependências instaladas, o `.env` e os dados do banco continuam e são reaproveitados na próxima subida.
+
+**Recomeçar do zero**
+
+```bash
+docker compose -f compose.dev.yaml down -v
+```
+
+O `-v` apaga o volume do banco. Na subida seguinte, o banco é recriado e as migrações são aplicadas de novo. Para gerar também um `.env` e chaves novas, apague o `apps/api/.env` antes de subir.
 
 **Executar comandos dentro do contêiner**
 
@@ -76,6 +112,8 @@ Dentro de um contêiner, `localhost` é o próprio contêiner, e não a máquina
 - **Errado:** `DATABASE_URL=postgresql://user:pass@localhost:5432/app`
 
 A regra vale para variáveis de ambiente, arquivos de configuração e código que referencie o host de um serviço.
+
+**Exceção:** quando o processo fala com algo que roda no mesmo contêiner, o endereço é `127.0.0.1`. É o caso do healthcheck de um serviço, que confere o próprio contêiner, e de um teste que abre um servidor temporário no contêiner onde roda.
 
 ## Princípios de trabalho
 

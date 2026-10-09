@@ -36,7 +36,7 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 │           │   ├── billing/
 │           │   └── worker/   # endpoints internos das tarefas
 │           ├── config/       # módulo de config: schema e leitura das variáveis de ambiente
-│           ├── infra/        # storage, tasks, mail, payment gateway
+│           ├── infra/        # database (cliente do Prisma), storage, tasks, mail, payment gateway
 │           └── common/       # guards, filtros de erro, rate limit
 └── packages/
     └── shared/               # tipos do contrato da API e códigos de erro
@@ -44,7 +44,8 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 
 | Decisão | Escolha |
 | --- | --- |
-| ORM e migrações | Prisma. As consultas recursivas de pastas usam SQL puro (`$queryRaw`). |
+| ORM e migrações | Prisma 7, com o driver `pg`. As consultas recursivas de pastas usam SQL puro (`$queryRaw`). O Prisma 8 ainda é release candidate e troca a API do cliente, então a versão fica fixada na 7 até ele estabilizar. |
+| Envio de e-mail | nodemailer, por SMTP, atrás da interface de `infra/mail` |
 | Validação de entrada | class-validator nos DTOs da API e zod nos formulários da web |
 | Configuração da API | `@nestjs/config`, com um schema do Joi que valida as variáveis de ambiente na subida |
 | Textos da interface | Só em português, sem biblioteca de tradução |
@@ -67,6 +68,8 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 ## 2. Esquema do banco
 
 **Convenções:** nomes em inglês e `snake_case`, chaves primárias em UUID v7 gerado pela aplicação, tamanhos em `BIGINT` (bytes), datas em `TIMESTAMPTZ` (UTC) e valores monetários em centavos.
+
+**Extensões:** a primeira migração habilita `citext` (texto insensível a maiúsculas, usado no e-mail) e `pg_trgm` (trigramas, usados na busca). Ela não cria nenhuma tabela: cada tabela nasce na migração da funcionalidade dona dela.
 
 ```mermaid
 erDiagram
@@ -244,6 +247,39 @@ Os contadores ficam no PostgreSQL porque as instâncias do Cloud Run não compar
 | 413 | `file_too_large` | Arquivo acima de 5 GB |
 | 413 | `quota_exceeded` | Sem espaço no plano |
 | 429 | `rate_limited` | Limite de requisições atingido |
+| 500 | `internal_error` | Falha não prevista. A resposta não traz mensagem interna nem stack trace. |
+
+**Corpo do erro**
+
+Todo erro sai com `Content-Type: application/problem+json` e este corpo:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Bad Request",
+  "status": 400,
+  "code": "validation_error",
+  "detail": "A entrada é inválida.",
+  "errors": [{ "field": "email", "messages": ["email must be an email"] }]
+}
+```
+
+| Campo | Conteúdo |
+| --- | --- |
+| `type` | Sempre `about:blank`. Quem identifica o erro é o `code`. |
+| `title` | O nome padrão do status HTTP |
+| `status` | O mesmo status da resposta |
+| `code` | O código estável da tabela acima. É o único campo que a web usa para decidir a mensagem. |
+| `detail` | Texto de apoio para quem desenvolve. Só aparece nos erros de regra de negócio e de validação. |
+| `errors` | Só em `validation_error` de um corpo que não passou na validação: um item por campo, com o caminho do campo (`address.city` nos aninhados) e as mensagens |
+
+- **Rota inexistente:** responde 404 com `not_found`.
+- **Corpo malformado:** um JSON que não pode ser lido responde 400 com `validation_error`, sem `errors`.
+- **Campos desconhecidos:** os campos que a rota não declara são descartados, sem erro.
+- **Outros erros do framework:** um status que não está na tabela (405, 415 etc.) usa como `code` o nome do status em `snake_case`, por exemplo `method_not_allowed`.
+- **Erro 5xx lançado de propósito:** quando o código responde de propósito com 501, 502, 503 ou 504, o status é mantido e o `code` é o nome dele (`service_unavailable`). A resposta continua sem `detail`, e a falha vai para o log.
+- **Erro de terceiros:** só o que o framework levanta escolhe o status. Um erro de uma biblioteca ou do SDK de um fornecedor é sempre `internal_error`, mesmo que ele traga um status próprio.
+- **Falha depois de a resposta começar:** se o erro acontece com a resposta já em envio, não dá mais para mandar o corpo de erro. A API registra a falha e derruba a conexão, para o cliente perceber que a resposta veio incompleta.
 
 ### 3.2 Autenticação e conta
 
@@ -539,8 +575,8 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 | Variável | Projeto | Conteúdo |
 | --- | --- | --- |
 | `PORT` | api | Porta HTTP, com padrão 3000. O Cloud Run a define em produção. |
-| `DATABASE_URL` | api | Conexão com o Cloud SQL (segredo) |
-| `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | Par de chaves RS256 (segredo) |
+| `DATABASE_URL` | api | Conexão com o Cloud SQL (segredo). No desenvolvimento, aponta para o `postgres`. |
+| `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | Par de chaves RSA do RS256, em PEM (segredo). São aceitos os formatos PKCS#8, SPKI e PKCS#1. |
 | `GCS_BUCKET` | api | Nome do bucket privado |
 | `TASKS_QUEUE`, `WORKER_URL` | api | Fila do Cloud Tasks e endereço do worker |
 | `QUEUE_DRIVER` | api | `cloud-tasks` em staging e produção, `local` no desenvolvimento (chamada HTTP direta ao worker) |
@@ -549,13 +585,20 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 | `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | api | Padrões de 15 minutos e 30 dias |
 | `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | api | Credenciais do gateway (segredo) |
 | `SMTP_URL`, `MAIL_FROM` | api | Servidor SMTP do serviço de e-mail (segredo) e remetente. No desenvolvimento, aponta para o `mailpit`. |
+| `DATABASE_CONNECT_TIMEOUT_MS` | api | Quanto esperar o banco para abrir uma conexão, em milissegundos. Padrão de 10000. |
+| `SMTP_TIMEOUT_MS` | api | Quanto esperar o servidor SMTP para resolver o nome, conectar e saudar, em milissegundos. Padrão de 10000. |
+| `SMTP_IDLE_TIMEOUT_MS` | api | Quanto uma conexão SMTP aberta pode ficar sem tráfego, durante um envio ou entre um envio e outro, em milissegundos. Padrão de 60000. |
 | `WEB_ORIGIN` | api | Origem do frontend, para CORS e links de e-mail |
 | `INTERNAL_API_SECRET` | api e web | Segredo que autoriza a web a repassar o IP do usuário (segredo) |
 | `API_URL` | web | Endereço interno da API |
 | `COOKIE_DOMAIN` | web | Domínio dos cookies de token |
 | `COOKIE_SECURE` | web | Padrão `true`. `false` só no desenvolvimento, que usa HTTP. |
 
-No ambiente local, as chaves do JWT são geradas por um script na primeira subida e gravadas no `.env`, que fica fora do Git.
+**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM`, `SMTP_TIMEOUT_MS`, `SMTP_IDLE_TIMEOUT_MS` e `DATABASE_CONNECT_TIMEOUT_MS`, e todas, menos `PORT` e os três prazos, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, que não pode ser lida, ou uma pública que não é o par da privada, impede a subida. O `MAIL_FROM` tem de trazer um endereço de e-mail, sozinho ou como `Nome <endereço>`. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
+
+**Ambiente local:** as variáveis da API ficam em `apps/api/.env`, fora do Git. Na primeira subida, o contêiner da API cria esse arquivo como cópia do `apps/api/.env.example`, que é versionado e funciona sem alterações, e um script gera as chaves do JWT e as grava nele. Os hosts são sempre os nomes dos serviços do Compose.
+
+**Banco de testes:** os testes da API usam um banco separado no mesmo PostgreSQL, com o nome do banco de `DATABASE_URL` mais o sufixo `_test`. Ele não tem variável própria.
 
 Os valores marcados como segredo vêm do Secret Manager e não ficam em arquivos versionados.
 

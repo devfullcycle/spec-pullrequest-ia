@@ -16,4 +16,5 @@ EXPOSE 3000
 
 # Instala as dependências na subida e depois só mantém o contêiner de pé;
 # os comandos são rodados com `docker compose exec`.
-CMD ["sh", "-c", "pnpm install && exec tail -f /dev/null"]
+# O arquivo /tmp/web-ready avisa o healthcheck do Compose de que a instalação terminou.
+CMD ["sh", "-c", "rm -f /tmp/web-ready && pnpm install && touch /tmp/web-ready && exec tail -f /dev/null"]

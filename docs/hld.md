@@ -221,6 +221,8 @@ O sistema tem quatro ambientes. O desenvolvimento é todo local, sem conta no Go
 
 Tudo roda no Docker Compose, inclusive o Next.js e o NestJS, com o código montado por volume. O Compose tem seis serviços: `web`, `api`, `worker`, `postgres`, `storage` e `mailpit`.
 
+Hoje o Compose tem quatro deles: `web`, `api`, `postgres` e `mailpit`. O `worker` e o `storage` entram com as funcionalidades que os usam. Os comandos e os endereços de cada serviço estão na seção "Execução no Docker" do `AGENTS.md` da raiz.
+
 | Produção | Substituto local |
 | --- | --- |
 | Cloud Run (frontend, API e worker) | Contêineres `web`, `api` e `worker` |
@@ -233,7 +235,7 @@ Tudo roda no Docker Compose, inclusive o Next.js e o NestJS, com o código monta
 
 **Configuração e dados**
 
-- **Variáveis de ambiente:** um `.env.example` versionado traz valores que já funcionam localmente. Cada pessoa o copia para `.env`, que fica fora do Git.
+- **Variáveis de ambiente:** um `.env.example` versionado traz valores que já funcionam localmente. Na primeira subida, o contêiner da API o copia para `.env`, que fica fora do Git.
 - **Segredos:** o ambiente local não usa segredos reais. As chaves do JWT são geradas por um script na primeira subida.
 - **Migrações:** são aplicadas quando o contêiner da API sobe.
 - **Seed:** os quatro planos, um usuário gratuito e um usuário pago, já verificados, com pastas e arquivos de exemplo.
@@ -266,6 +268,7 @@ flowchart LR
 - **Gateway de pagamento:** sandbox no staging e credenciais reais só em produção.
 - **Infraestrutura como código:** os dois projetos são criados pelo mesmo conjunto de arquivos (Terraform ou OpenTofu), para não divergirem.
 - **Custo do staging:** o Cloud SQL usa a menor instância disponível, sem alta disponibilidade.
+- **Migrações do banco:** ainda não há como aplicá-las no staging nem na produção. Só o ambiente local as aplica, na subida do contêiner da API. A imagem de produção sobe apenas a aplicação: ela não leva a ferramenta de migração nem os arquivos de migração. O que falta decidir está nas questões em aberto da seção 7.
 
 ## 7. Decisões, riscos e questões em aberto
 
@@ -311,4 +314,7 @@ flowchart LR
 - [ ] Observabilidade: logs, métricas e alertas ainda não foram desenhados.
 - [ ] Compatibilidade do `fake-gcs-server` com sessão de upload retomável e URLs assinadas.
 - [ ] Escolha entre Terraform e OpenTofu para a infraestrutura como código.
+- [ ] Forma da `DATABASE_URL` no staging e na produção. A validação da API hoje recusa a URL por socket do Cloud SQL, que tem o host vazio e o caminho do socket no parâmetro `host`. Falta decidir se a API conecta por socket ou por TCP; se for por socket, a validação passa a aceitar essa forma.
+- [ ] Formato das chaves do JWT nos segredos. A validação só aceita o PEM com quebras de linha reais. Falta decidir se o meio que entrega o segredo as preserva, ou se a API passa a aceitar a chave numa linha só, com `\n` escapado.
+- [ ] Migrações do banco no staging e na produção. Falta decidir quem as executa (um passo da esteira antes da publicação, ou uma tarefa do Cloud Run), com qual imagem (a da aplicação, acrescida da ferramenta de migração, ou uma imagem própria), com qual credencial de banco e em que ordem em relação à troca de versão da aplicação, já que a mesma imagem é promovida do staging para a produção.
 - [ ] Prazo, equipe e orçamento, que continuam indefinidos no brief.

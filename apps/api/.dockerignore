@@ -7,3 +7,4 @@ coverage
 Dockerfile*
 .dockerignore
 README.md
+src/generated
