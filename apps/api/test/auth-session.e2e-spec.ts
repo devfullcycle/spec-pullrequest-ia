@@ -178,6 +178,30 @@ describe('Entrar e sair', () => {
 
       expectProblem(response, UNAUTHENTICATED);
     });
+
+    it('aceita o esquema Bearer em qualquer caixa', async () => {
+      const email = uniqueEmail();
+      await auth.registerVerified(email);
+      const { body: tokens } = await auth.login(email).expect(200);
+
+      await request(app.getHttpServer())
+        .get('/v1/me')
+        .set('Authorization', `bearer ${tokens.accessToken}`)
+        .expect(200);
+    });
+
+    it('devolve unauthenticated quando o cabeçalho traz algo além do token', async () => {
+      const email = uniqueEmail();
+      await auth.registerVerified(email);
+      const { body: tokens } = await auth.login(email).expect(200);
+
+      const response = await request(app.getHttpServer())
+        .get('/v1/me')
+        .set('Authorization', `Bearer ${tokens.accessToken} sobra`)
+        .expect(401);
+
+      expectProblem(response, UNAUTHENTICATED);
+    });
   });
 
   describe('logout', () => {
@@ -201,6 +225,10 @@ describe('Entrar e sair', () => {
 
     it('responde 204 para um token que nunca foi emitido', async () => {
       await auth.logout('um-token-que-nunca-existiu').expect(204, {});
+    });
+
+    it('responde 204 para um token de qualquer tamanho', async () => {
+      await auth.logout('a'.repeat(5000)).expect(204, {});
     });
 
     it('responde 204 para o token de uma Sessão já encerrada', async () => {

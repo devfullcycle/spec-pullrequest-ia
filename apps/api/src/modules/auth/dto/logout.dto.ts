@@ -1,8 +1,8 @@
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 
 export class LogoutDto {
+  // Sem limite de tamanho: um token que não existe também recebe 204.
   @IsString()
   @IsNotEmpty()
-  @MaxLength(512)
   refreshToken: string;
 }

@@ -18,15 +18,21 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const [scheme, token] = request.headers.authorization?.split(' ') ?? [];
-    const userId =
-      scheme === 'Bearer' && token
-        ? await this.accessTokens.verify(token)
-        : null;
+    const token = bearerToken(request.headers.authorization);
+    const userId = token ? await this.accessTokens.verify(token) : null;
     if (!userId) {
       throw new UnauthenticatedError();
     }
     request.userId = userId;
     return true;
   }
+}
+
+/**
+ * O token de um cabeçalho `Authorization: Bearer <token>`, ou `undefined` se o
+ * cabeçalho não tem exatamente esse formato. O nome do esquema não diferencia
+ * maiúsculas (RFC 7235).
+ */
+function bearerToken(header: string | undefined): string | undefined {
+  return /^Bearer +(\S+)$/i.exec(header ?? '')?.[1];
 }
