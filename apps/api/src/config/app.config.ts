@@ -1,6 +1,6 @@
 import { registerAs } from '@nestjs/config';
-import { env } from './env.js';
+import { validatedEnv } from './env.js';
 
 export const appConfig = registerAs('app', () => ({
-  port: Number(env('PORT')),
+  port: validatedEnv().PORT,
 }));

@@ -37,6 +37,17 @@ describe('Base de testes', () => {
     }
   });
 
+  it('valida a variável trocada pelo teste, e não sobe a aplicação se ela for inválida', async () => {
+    vi.stubEnv('PORT', 'abc');
+    try {
+      await expect(createTestApp()).rejects.toThrow(
+        /Config validation error: [^]*"PORT" must be a number/,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('aplica no banco de testes as mesmas migrações do banco de desenvolvimento', async () => {
     const extensions = await app.get(PrismaService).$queryRaw<
       { extname: string }[]

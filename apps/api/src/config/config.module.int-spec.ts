@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { generateKeyPairSync } from 'node:crypto';
 import { appConfig } from './app.config.js';
 import { authConfig } from './auth.config.js';
 import { AppConfigModule } from './config.module.js';
@@ -42,6 +43,7 @@ describe('Variáveis de ambiente na subida', () => {
     expect(moduleRef.get(mailConfig.KEY)).toEqual({
       smtpUrl: 'smtp://mailpit:1025',
       from: 'Remetente <remetente@example.com>',
+      timeoutMs: 10_000,
     });
     const auth = moduleRef.get(authConfig.KEY);
     expect(auth.jwtPrivateKey).toContain('-----BEGIN PRIVATE KEY-----');
@@ -71,6 +73,8 @@ describe('Variáveis de ambiente na subida', () => {
     ['DATABASE_URL', 'mysql://user:pass@mysql:3306/db'],
     ['SMTP_URL', 'mailpit:1025'],
     ['MAIL_FROM', ''],
+    ['SMTP_TIMEOUT_MS', '0'],
+    ['SMTP_TIMEOUT_MS', 'logo'],
     ['JWT_PRIVATE_KEY', 'não é uma chave'],
     ['JWT_PUBLIC_KEY', 'não é uma chave'],
   ])(
@@ -98,6 +102,63 @@ describe('Variáveis de ambiente na subida', () => {
     vi.stubEnv('JWT_PRIVATE_KEY', 'valor-secreto-que-nao-e-pem');
 
     await expect(boot()).rejects.not.toThrow('valor-secreto-que-nao-e-pem');
+  });
+
+  describe('chaves do JWT', () => {
+    it('aceita um par RSA no formato PKCS#1', async () => {
+      const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+        publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+      });
+      vi.stubEnv('JWT_PRIVATE_KEY', privateKey);
+      vi.stubEnv('JWT_PUBLIC_KEY', publicKey);
+
+      const moduleRef = await boot();
+
+      expect(moduleRef.get(authConfig.KEY)).toEqual({
+        jwtPrivateKey: privateKey,
+        jwtPublicKey: publicKey,
+      });
+    });
+
+    it.each([
+      ['JWT_PRIVATE_KEY', 'PRIVATE KEY'],
+      ['JWT_PUBLIC_KEY', 'PUBLIC KEY'],
+    ])(
+      'recusa %s com cara de PEM e conteúdo que não é uma chave',
+      async (variable, label) => {
+        vi.stubEnv(
+          variable,
+          `-----BEGIN ${label}-----\nbmFvIGUgdW1hIGNoYXZl\n-----END ${label}-----`,
+        );
+
+        await expect(boot()).rejects.toThrow(
+          new RegExp(`Config validation error: [^]*"${variable}"`),
+        );
+      },
+    );
+
+    it('recusa um par que não é RSA, porque o token é assinado com RS256', async () => {
+      const { privateKey, publicKey } = generateKeyPairSync('ec', {
+        namedCurve: 'P-256',
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+      });
+      vi.stubEnv('JWT_PRIVATE_KEY', privateKey);
+      vi.stubEnv('JWT_PUBLIC_KEY', publicKey);
+
+      const failure = boot();
+
+      await expect(failure).rejects.toThrow(/"JWT_PRIVATE_KEY"/);
+      await expect(failure).rejects.toThrow(/"JWT_PUBLIC_KEY"/);
+    });
+
+    it('recusa a chave privada no lugar da pública', async () => {
+      vi.stubEnv('JWT_PUBLIC_KEY', process.env.JWT_PRIVATE_KEY);
+
+      await expect(boot()).rejects.toThrow(/"JWT_PUBLIC_KEY"/);
+    });
   });
 
   it('impede a aplicação inteira de subir', async () => {
