@@ -7,13 +7,13 @@ WORKDIR /app
 
 FROM base AS deps
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 RUN pnpm install --frozen-lockfile
 
 FROM base AS prod-deps
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 RUN pnpm install --frozen-lockfile --prod
 
@@ -22,7 +22,8 @@ FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN pnpm build
+# O cliente do Prisma é gerado dentro de src/ e compilado junto com a aplicação.
+RUN pnpm exec prisma generate && pnpm build
 
 FROM node:24-slim AS runner
 

@@ -1,0 +1,13 @@
+// Esquema do banco. As convenções e as tabelas estão na seção 2 do docs/lld.md.
+// A URL de conexão fica no prisma.config.ts, e não aqui.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}

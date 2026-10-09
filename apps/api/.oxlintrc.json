@@ -6,5 +6,6 @@
   },
   "env": {
     "node": true
-  }
+  },
+  "ignorePatterns": ["src/generated"]
 }
