@@ -118,8 +118,8 @@ O código segue Clean Architecture e SOLID. A regra central é a direção das d
 ### Camadas de cada módulo
 
 - **Controller:** rotas HTTP, DTOs e validação.
-- **Service:** regras de negócio e transações.
-- **Repository:** acesso ao banco.
+- **Service:** regras de negócio. Ele decide o que acontece e nunca abre uma transação: só os repositories têm o cliente do banco.
+- **Repository:** acesso ao banco e a atomicidade de cada comando. Quando um comando lê, decide e grava, ou quando duas gravações têm de valer juntas, o repository as põe numa transação e devolve ao service o que aconteceu, como um resultado tipado (`'rotated' | 'invalid' | 'reused'`). O que só pode valer junto com a gravação entra nessa mesma transação, mesmo sendo consequência de uma regra. A regra continua descrita e conferida no service.
 
 Cada módulo é dono das próprias tabelas. Um módulo só chama outro pelo service público dele, nunca pelas tabelas nem pelo repository.
 

@@ -16,7 +16,7 @@ interface Rotation {
   /** Hash do token apresentado. */
   tokenHash: string;
   now: Date;
-  /** Um token trocado antes deste instante já saiu da janela de tolerância. */
+  /** Um token trocado até este instante já saiu da janela de tolerância. */
   reuseAcceptedSince: Date;
   /** O token que entra no lugar, na mesma Sessão. */
   replacement: { id: string; tokenHash: string; expiresAt: Date };
@@ -25,7 +25,8 @@ interface Rotation {
 /**
  * - `rotated`: o token novo foi gravado.
  * - `invalid`: o token não existe ou expirou sem ter sido trocado.
- * - `reused`: o token já tinha sido trocado, fora da janela de tolerância.
+ * - `reused`: o token já tinha sido trocado, fora da janela de tolerância. Os
+ *   tokens de todas as Sessões do Usuário foram apagados.
  */
 export type RotationOutcome = 'rotated' | 'invalid' | 'reused';
 
@@ -47,7 +48,8 @@ export class RefreshTokensRepository {
   /**
    * Troca o token pelo `replacement`, se ele ainda vale. Só o primeiro uso o
    * marca como trocado: os seguintes, dentro da janela, abrem outro ramo da
-   * mesma Sessão sem esticar a janela.
+   * mesma Sessão sem esticar a janela. O reuso fora da janela apaga os tokens
+   * de todas as Sessões do Usuário.
    */
   rotate(rotation: Rotation): Promise<RotationOutcome> {
     const { userId, tokenHash, now, reuseAcceptedSince, replacement } =
@@ -62,7 +64,10 @@ export class RefreshTokensRepository {
       }
       // Antes da validade: um token trocado que reaparece depois de expirar
       // também é reuso, e os que saíram dele ainda valem.
-      if (current.rotatedAt && current.rotatedAt < reuseAcceptedSince) {
+      if (current.rotatedAt && current.rotatedAt <= reuseAcceptedSince) {
+        // Na mesma transação, e sob o mesmo lock, da detecção: nenhuma outra
+        // renovação do Usuário passa entre uma coisa e outra.
+        await tx.refreshToken.deleteMany({ where: { userId } });
         return 'reused';
       }
       if (current.expiresAt <= now) {
@@ -95,30 +100,22 @@ export class RefreshTokensRepository {
       where: { tokenHash },
       select: { userId: true, sessionId: true },
     });
-    if (token) {
-      await this.deleteLocked(token.userId, { sessionId: token.sessionId });
+    if (!token) {
+      return;
     }
-  }
-
-  /** Apaga os tokens de todas as Sessões do Usuário. */
-  deleteAllOfUser(userId: string): Promise<void> {
-    return this.deleteLocked(userId, { userId });
-  }
-
-  private async deleteLocked(
-    userId: string,
-    where: Prisma.RefreshTokenWhereInput,
-  ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      await this.lockTokensOf(tx, userId);
-      await tx.refreshToken.deleteMany({ where });
+      await this.lockTokensOf(tx, token.userId);
+      await tx.refreshToken.deleteMany({
+        where: { sessionId: token.sessionId },
+      });
     });
   }
 
   /**
    * Põe em fila, até o fim da transação, quem troca ou apaga tokens do mesmo
-   * Usuário. Sem isso, uma renovação que corre junto com o logout gravaria um
-   * token novo numa Sessão que acabou de ser apagada.
+   * Usuário. Sem isso, uma renovação que corre junto com o logout, ou com o
+   * encerramento de todas as Sessões, gravaria um token novo numa Sessão que
+   * acabou de ser apagada.
    */
   private async lockTokensOf(
     tx: Prisma.TransactionClient,

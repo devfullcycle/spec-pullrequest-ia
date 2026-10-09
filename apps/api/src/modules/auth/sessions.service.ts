@@ -91,9 +91,6 @@ export class SessionsService {
         expiresAt: this.refreshTokenExpiry(),
       },
     });
-    if (outcome === 'reused') {
-      await this.refreshTokens.deleteAllOfUser(current.userId);
-    }
     if (outcome !== 'rotated') {
       throw new UnauthenticatedError();
     }

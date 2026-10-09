@@ -325,6 +325,28 @@ describe('Entrar e sair', () => {
       }
     });
 
+    it('não deixa a Sessão viva quando a renovação e o logout chegam juntos', async () => {
+      const email = uniqueEmail();
+      await auth.registerVerified(email);
+
+      // A ordem entre as duas chamadas varia a cada rodada. Nas duas ordens, a
+      // Sessão tem de acabar inteira.
+      for (let round = 0; round < 8; round++) {
+        const { body: tokens } = await auth.login(email).expect(200);
+
+        const [renewal] = await Promise.all([
+          auth.refresh(tokens.refreshToken),
+          auth.logout(tokens.refreshToken).expect(204),
+        ]);
+
+        expect([200, 401]).toContain(renewal.status);
+        await auth.expectRefreshRejected(tokens.refreshToken);
+        if (renewal.status === 200) {
+          await auth.expectRefreshRejected(renewal.body.refreshToken);
+        }
+      }
+    });
+
     it('responde 204 para um token que nunca foi emitido', async () => {
       await auth.logout('um-token-que-nunca-existiu').expect(204, {});
     });
@@ -371,6 +393,19 @@ describe('Entrar e sair', () => {
         await shortLived.me(tokens.accessToken).expect(401),
         UNAUTHENTICATED,
       );
+    });
+
+    it('sem tolerância, recusa o token trocado no uso seguinte e encerra as Sessões', async () => {
+      vi.stubEnv('REFRESH_TOKEN_REUSE_GRACE_SECONDS', '0');
+      shortLivedApp = await createTestApp();
+      const shortLived = authRoutes(shortLivedApp);
+      const tokens = await shortLived.openSession(uniqueEmail());
+      const { body: renewed } = await shortLived
+        .refresh(tokens.refreshToken)
+        .expect(200);
+
+      await shortLived.expectRefreshRejected(tokens.refreshToken);
+      await shortLived.expectRefreshRejected(renewed.refreshToken);
     });
 
     it('encerra todas as Sessões quando o token trocado é reapresentado depois de expirar', async () => {
