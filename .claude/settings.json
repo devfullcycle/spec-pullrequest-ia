@@ -1,7 +1,8 @@
 {
   "enabledMcpjsonServers": [
     "chrome-devtools",
-    "playwright"
+    "playwright",
+    "linear-server"
   ],
   "enabledPlugins": {
     "figma@claude-plugins-official": true
