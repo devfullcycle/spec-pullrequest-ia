@@ -16,6 +16,9 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 │   │   │   ├── (auth)/       # login, cadastro, redefinição de senha
 │   │   │   ├── (drive)/      # pastas, lixeira, busca, planos
 │   │   │   └── s/[token]/    # página pública do link compartilhado
+│   │   ├── components/
+│   │   │   ├── ui/           # primitivos do design system (botões, campos, menu, diálogo)
+│   │   │   └── <domínio>/    # navigation, files, sharing, plans, auth
 │   │   ├── lib/api/          # cliente da API, usado só no servidor
 │   │   └── lib/session/      # leitura e renovação dos cookies de token
 │   └── api/                  # NestJS (API e worker, mesma imagem)

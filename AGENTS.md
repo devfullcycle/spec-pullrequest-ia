@@ -7,7 +7,7 @@ Em `docs/` estão os documentos que definem o produto, a arquitetura e os detalh
 1. `docs/product-brief.md`: o quê e para quem. Escopo do MVP, o que fica fora, planos e métricas.
 2. `docs/hld.md`: High-level design, documento de arquitetura de alto nível. Aqui ficam as decisões de arquitetura, os fluxos principais e a visão geral do sistema.
 3. `docs/lld.md`: Low-level design, documento de arquitetura de baixo nível com detalhes de implementação. Aqui ficam os esquemas de banco, contratos de API, estados, regras de cota, tarefas do worker e upload em chunks.
-4. `docs/design-system.md`: linguagem visual da interface. Aqui ficam os tokens de cor, tipografia, espaçamento, raio e sombra, os estados de interação, os componentes e o comportamento responsivo.
+4. `docs/design-system.md`: linguagem visual da interface. Aqui ficam os tokens de cor, tipografia, espaçamento, raio e sombra, os estados de interação, os componentes, o comportamento responsivo e o fluxo de trabalho com o Figma.
 
 ## Execução no Docker
 
@@ -73,6 +73,12 @@ A regra vale para variáveis de ambiente, arquivos de configuração e código q
 - **Qualidade de código:** ESLint e Prettier para manter o estilo consistente.
 - **Documentação:** arquitetura, configuração e solução de problemas ficam em `docs/`.
 
+## Design e Figma
+
+O Figma é a ferramenta de design do projeto, acessada pelo servidor MCP do plugin `figma`.
+
+**Sempre que a tarefa envolver design ou interface, leia antes o `docs/design-system.md`**, seja para desenhar no Figma, seja para implementar uma tela ou um componente no código. Ele define os tokens, os componentes e o fluxo de trabalho com o Figma (sincronia, passos do Figma para o código, assets e validação visual), e as regras dele são obrigatórias.
+
 ## Definição de pronto
 
 Uma mudança no código só está concluída quando **todos** os itens abaixo passam:
@@ -81,6 +87,7 @@ Uma mudança no código só está concluída quando **todos** os itens abaixo pa
 2. Antes de terminar, rode a suíte completa de testes: `pnpm test`.
 3. O TypeScript compila sem erros: `pnpm exec tsc --noEmit` termina com código 0. Erros de compilação nunca ficam como dívida para tarefas futuras.
 4. O lint passa: `pnpm lint`.
+5. Em mudanças de interface, a validação visual descrita em `docs/design-system.md` foi feita.
 
 Se algum item falhar, a tarefa não está pronta. Corrija a causa antes de declarar a conclusão.
 

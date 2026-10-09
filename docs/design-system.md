@@ -1,6 +1,6 @@
 # Design System — Gerenciador de Arquivos (estilo Google Drive)
 
-Este documento define a linguagem visual do MVP web: cores, tipografia, layout, elevação, formas, estados e componentes. Os componentes, o layout e a responsividade foram reescritos para um aplicativo de arquivos.
+Este documento define a linguagem visual do MVP web: cores, tipografia, layout, elevação, formas, estados e componentes. Ele também define o fluxo de trabalho com o Figma, e vale tanto para desenhar quanto para implementar a interface. Os componentes, o layout e a responsividade foram reescritos para um aplicativo de arquivos.
 
 ## Visão geral
 
@@ -362,6 +362,75 @@ As tabelas deste documento são a fonte da verdade. A implementação declara os
 - **Componentes:** as chaves `{component.*}` nomeiam componentes React em `kebab-case`. Elas não viram variáveis CSS.
 - **Sintaxe:** confirme a sintaxe atual do `@theme` na documentação do Tailwind, pelo context7, antes de implementar.
 
+## Tokens no Figma
+
+O arquivo do Figma espelha este documento com os mesmos nomes. Nenhuma camada usa valor solto: toda cor, tamanho, raio e sombra vem de uma variável ou de um estilo.
+
+| Grupo | No Figma | Exemplo |
+| --- | --- | --- |
+| `{colors.*}` | Coleção de variáveis `colors`, com os modos `Light` e `Dark` | `{colors.primary-fill}` → `colors/primary-fill` |
+| `{typography.*}` | Estilos de texto | `{typography.ui}` → `typography/ui` |
+| `{rounded.*}` | Coleção de variáveis numéricas `rounded` | `{rounded.lg}` → `rounded/lg` |
+| `{spacing.*}` | Coleção de variáveis numéricas `spacing` | `{spacing.lg}` → `spacing/lg` |
+| `{shadow.*}` | Estilos de efeito | `{shadow.overlay}` → `shadow/overlay` |
+| `{component.*}` | Componentes, com os estados como variantes | `{component.file-row}` → `file-row` |
+
+- **Temas:** os valores das colunas Claro e Escuro das tabelas de cor são os modos `Light` e `Dark` da coleção `colors`.
+- **Ícones:** os do Lucide, com o nome original na camada, para que o código importe o mesmo ícone do `lucide-react`.
+- **Processo:** as regras de trabalho com o Figma (sincronia, fluxo, assets, validação) estão na seção "Fluxo de trabalho com o Figma", a seguir.
+
+## Fluxo de trabalho com o Figma
+
+O Figma é a ferramenta de design do projeto, acessada pelo servidor MCP do plugin `figma`. Este documento governa as duas pontas: o que é desenhado no Figma e o que é implementado no código. As regras abaixo valem para qualquer tarefa de interface.
+
+**Arquivo do Figma:** ainda não criado. Registre a URL aqui quando existir.
+
+### Sincronia
+
+- Doc, Figma e código usam os mesmos nomes e os mesmos valores. O mapeamento está nas seções "Tokens no Tailwind" e "Tokens no Figma".
+- Toda mudança de token ou componente começa neste documento e, na mesma tarefa, é propagada para o Figma e para o `apps/web/app/globals.css`.
+- Se o Figma tiver um valor ou componente que não está neste documento, ou o contrário, pare e aponte a divergência. Nunca resolva com valor fixo no código nem com valor solto no Figma.
+
+### Do Figma para o código
+
+Siga os passos nesta ordem, sem pular nenhum:
+
+1. Rode `get_design_context` para obter a representação estruturada do nó exato.
+2. Se a resposta vier grande demais ou truncada, rode `get_metadata` para ver o mapa de nós e busque de novo só os nós necessários com `get_design_context`.
+3. Rode `get_screenshot` para ter a referência visual da variante que será implementada.
+4. Só depois dos passos 1 e 3, baixe os assets e comece a implementar.
+5. Trate o código que o servidor devolve (em geral React com Tailwind) como descrição do design, e não como código final. Traduza-o para as convenções do projeto:
+   - troque as classes utilitárias cruas pelas classes dos tokens (`bg-primary-fill`, `text-ui`, `rounded-lg`); nenhum hex, tamanho de fonte, raio ou sombra fixo;
+   - reutilize os componentes de `apps/web/components/` em vez de duplicar a funcionalidade;
+   - aplique os estados de interação e as regras de foco e de alvo de toque do design system, mesmo que o frame só mostre o estado padrão.
+6. Valide o resultado contra o Figma antes de concluir, como descrito em "Validação visual", abaixo.
+
+### Componentes
+
+- Os componentes ficam em `apps/web/components/`: os primitivos em `ui/` e os de domínio em `navigation/`, `files/`, `sharing/`, `plans/` e `auth/`.
+- O nome do arquivo é a chave do componente neste documento, em `kebab-case`: `{component.file-row}` → `components/files/file-row.tsx`.
+- Antes de criar um componente, procure a chave em `apps/web/components/`. Só crie o que existe neste documento; se não existir, acrescente aqui primeiro.
+
+### Assets
+
+- Ícones nunca são baixados do Figma. Identifique o ícone pelo nome da camada e importe o equivalente do `lucide-react`. Se não houver equivalente, pare e aponte.
+- Não instale nenhum outro pacote de ícones.
+- Para os demais assets (logotipo, imagens, ilustrações), use a fonte que o servidor MCP do Figma devolve e salve o arquivo em `apps/web/public/`. Não crie placeholders nem redesenhe o asset à mão quando o servidor fornece a fonte.
+
+### Deste documento para o Figma
+
+- Procure na biblioteca do arquivo (`search_design_system`) antes de criar um componente ou uma variável.
+- Ligue tudo a variáveis e estilos: nenhum hex, tamanho de fonte, raio ou sombra solto.
+- Nomeie cada componente com a chave deste documento (`file-row`, `plan-card`) e modele os estados como variantes.
+- Use auto layout em todo frame e componente.
+- Organize o arquivo nas páginas Fundações, Componentes, Drive, Autenticação, Link público e Planos.
+- Desenhe cada tela em dois frames, base (390px) e `lg` (1280px), e confira os modos Light e Dark.
+- Use os ícones do Lucide, com o nome original na camada.
+
+### Validação visual
+
+Com a web rodando no contêiner, abra a tela pelo MCP do Playwright, capture em 390px e em 1280px, nos temas claro e escuro, e compare com o `get_screenshot` do frame. Corrija as diferenças de layout, espaçamento, cor e tipografia. Se o Figma não tiver a variante de um tamanho ou de um tema, valide o que existe e diga o que ficou sem referência.
+
 ## Guia de iteração
 
 1. Trabalhe em UM componente por vez e cite a chave dele (`{component.file-row}`, `{component.share-dialog}`).
@@ -371,12 +440,13 @@ As tabelas deste documento são a fonte da verdade. A implementação declara os
 5. Títulos ficam em Geist 600 com tracking negativo; texto fica em Geist 400. Não há peso intermediário.
 6. A sombra única (`{shadow.overlay}`) é só para camadas flutuantes.
 7. Na dúvida sobre ênfase, troque a superfície ou aumente o espaço antes de acrescentar borda, cor ou sombra.
-8. Um componente novo entra neste documento antes de entrar no código.
+8. Um token ou componente novo entra neste documento antes de entrar no Figma e no código.
 
 ## Lacunas conhecidas
 
 - O produto ainda não tem nome nem logotipo. Onde este documento diz "marca do produto", a interface usa um marcador de texto até a identidade ser definida.
 - O contraste dos pares de cor (texto sobre superfície, nos dois temas) foi escolhido para atender à WCAG AA, mas ainda não foi medido com ferramenta. A medição acontece quando os tokens forem implementados.
+- O arquivo do Figma ainda não existe. As variáveis, os estilos e os componentes serão criados a partir deste documento.
 - Os tokens ainda não estão no `globals.css`, e o `lucide-react` não está instalado. Os dois entram com a implementação da interface.
 - Não há seletor manual de tema. O tema segue o sistema operacional.
 - Os controles internos de vídeo, áudio e PDF do `{component.preview-viewer}` são os do navegador e não seguem estes tokens.
