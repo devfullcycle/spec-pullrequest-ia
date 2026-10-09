@@ -1,0 +1,104 @@
+services:
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.dev
+    # Faz o contêiner parado encerrar na hora no `down`.
+    init: true
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app
+    environment:
+      # A web chama a API sempre pelo servidor, pelo nome do serviço.
+      API_URL: http://api:3000
+      # O ambiente local usa HTTP, e o navegador descartaria um cookie `Secure`.
+      COOKIE_SECURE: "false"
+      # Autoriza a web a repassar à API o IP do navegador. É o mesmo valor do apps/api/.env.example.
+      INTERNAL_API_SECRET: segredo-interno-so-do-ambiente-local
+    healthcheck:
+      # O arquivo é criado quando a instalação das dependências termina.
+      test: ["CMD", "test", "-f", "/tmp/web-ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10m
+      # Durante a preparação, confere a cada segundo, para o `up --wait` não esperar à toa.
+      start_interval: 1s
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.dev
+    init: true
+    ports:
+      # Na máquina a API fica na 3001; entre contêineres, em http://api:3000.
+      - "3001:3000"
+    volumes:
+      - ./apps/api:/app
+    depends_on:
+      # As migrações rodam na subida do contêiner, então o banco precisa aceitar conexões antes.
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    healthcheck:
+      # O arquivo é criado no fim da preparação (dependências, .env, chaves e migrações).
+      test: ["CMD", "test", "-f", "/tmp/api-ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10m
+      # Durante a preparação, confere a cada segundo, para o `up --wait` não esperar à toa.
+      start_interval: 1s
+
+  playwright:
+    # Os navegadores vêm na imagem. A versão é a mesma do `@playwright/test` do
+    # apps/web/package.json: ao atualizar uma, atualize a outra.
+    image: mcr.microsoft.com/playwright:v1.64.0-noble
+    init: true
+    # O Chromium usa memória compartilhada, e os 64 MB padrão do Docker não bastam para a suíte em paralelo.
+    ipc: host
+    # O mesmo usuário do contêiner `web`, para os relatórios não nascerem como root na máquina.
+    user: "1000:1000"
+    working_dir: /app
+    volumes:
+      - ./apps/web:/app
+    environment:
+      WEB_URL: http://web:3000
+      MAILPIT_URL: http://mailpit:8025
+    depends_on:
+      # Usa a `node_modules` que o contêiner `web` instala.
+      web:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    # Fica parado, como `web` e `api`. Os testes são rodados com `docker compose exec`.
+    command: ["tail", "-f", "/dev/null"]
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # Por TCP, e não pelo socket: na primeira subida a imagem roda um servidor
+      # temporário, só no socket, para criar o banco, e ele ainda não é o definitivo.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U app -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 1m
+      start_interval: 1s
+
+  mailpit:
+    image: axllent/mailpit:v1.30
+    ports:
+      # Tela e API HTTP dos e-mails capturados. O SMTP (1025) só é usado entre contêineres.
+      - "8025:8025"
+
+volumes:
+  postgres-data:

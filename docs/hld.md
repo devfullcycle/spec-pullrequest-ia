@@ -206,7 +206,71 @@ Apagar o link corta o acesso na hora, porque as URLs assinadas expiram em minuto
 | Gateway de pagamento | Checkout hospedado, cartão recorrente, Pix e webhooks | Fornecedor a definir |
 | Serviço de e-mail transacional | Verificação de e-mail, redefinição de senha e avisos de cobrança | Fornecedor a definir |
 
-## 6. Decisões, riscos e questões em aberto
+## 6. Ambientes e desenvolvimento
+
+O sistema tem quatro ambientes. O desenvolvimento é todo local, sem conta no Google Cloud, e um staging na nuvem valida o que os emuladores não reproduzem.
+
+| Ambiente | Onde roda | Dados | Para que serve |
+| --- | --- | --- | --- |
+| Local | Docker Compose | Seed | Desenvolvimento do dia a dia |
+| Integração contínua | Contêineres do Compose, no GitHub Actions | Seed | Testes automáticos a cada pull request |
+| Staging | Projeto próprio no Google Cloud, em São Paulo | Fictícios | Validar contra os serviços reais antes de produção |
+| Produção | Outro projeto no Google Cloud, em São Paulo | Reais | Usuários |
+
+### 6.1 Ambiente local
+
+Tudo roda no Docker Compose, inclusive o Next.js e o NestJS, com o código montado por volume. O Compose tem seis serviços: `web`, `api`, `worker`, `postgres`, `storage` e `mailpit`.
+
+Hoje o Compose tem quatro deles: `web`, `api`, `postgres` e `mailpit`. O `worker` e o `storage` entram com as funcionalidades que os usam. Os comandos e os endereços de cada serviço estão na seção "Execução no Docker" do `AGENTS.md` da raiz.
+
+| Produção | Substituto local |
+| --- | --- |
+| Cloud Run (frontend, API e worker) | Contêineres `web`, `api` e `worker` |
+| Cloud SQL | Contêiner do PostgreSQL, na mesma versão |
+| Cloud Storage | Emulador `fake-gcs-server` |
+| Cloud Tasks | Driver local: a API chama o endpoint do worker direto por HTTP, sem fila |
+| Cloud Scheduler | Um comando por rotina, disparado manualmente |
+| Serviço de e-mail | Mailpit, que captura os e-mails e os mostra numa tela local |
+| Gateway de pagamento | Um comando que simula os webhooks do gateway contra a API local |
+
+**Configuração e dados**
+
+- **Variáveis de ambiente:** um `.env.example` versionado traz valores que já funcionam localmente. Na primeira subida, o contêiner da API o copia para `.env`, que fica fora do Git.
+- **Segredos:** o ambiente local não usa segredos reais. As chaves do JWT são geradas por um script na primeira subida.
+- **Migrações:** são aplicadas quando o contêiner da API sobe.
+- **Seed:** os quatro planos, um usuário gratuito e um usuário pago, já verificados, com pastas e arquivos de exemplo.
+- **Bucket:** é criado na subida do emulador.
+- **Reinício:** um comando apaga os volumes e refaz as migrações e o seed.
+- **Prazos configuráveis:** a retenção da lixeira, o prazo de upload pendente e a validade dos tokens são definidos por variável de ambiente, com os valores de produção como padrão. Localmente, eles podem ser reduzidos para testar.
+
+**O que o ambiente local não reproduz**
+
+- **Upload em chunks:** o emulador pode divergir do Cloud Storage no protocolo de sessão retomável e nas URLs assinadas. A compatibilidade do `fake-gcs-server` com esses dois recursos ainda não foi verificada.
+- **Novas tentativas das tarefas:** com o driver local, uma tarefa que falha não é repetida.
+- **Webhooks reais:** os eventos são simulados, e não enviados pelo gateway.
+
+Esses três pontos são validados no staging.
+
+### 6.2 Staging, produção e entrega
+
+```mermaid
+flowchart LR
+    PR["Pull request"] -->|"lint, testes unitários<br/>e de integração"| MAIN["Merge na branch principal"]
+    MAIN -->|"publica a imagem"| STG["Staging"]
+    STG -->|"testes de ponta a ponta"| OK{"Aprovado?"}
+    OK -->|"promoção manual<br/>da mesma imagem"| PROD["Produção"]
+```
+
+- **Projetos separados:** staging e produção têm bancos, buckets e segredos próprios. Um erro de configuração no staging não alcança dados de usuários.
+- **Mesma imagem:** a imagem de contêiner validada no staging é a que vai para produção, sem nova compilação.
+- **Repositório e CI:** GitHub, com GitHub Actions.
+- **Dados de produção:** nunca são copiados para staging nem para máquinas locais.
+- **Gateway de pagamento:** sandbox no staging e credenciais reais só em produção.
+- **Infraestrutura como código:** os dois projetos são criados pelo mesmo conjunto de arquivos (Terraform ou OpenTofu), para não divergirem.
+- **Custo do staging:** o Cloud SQL usa a menor instância disponível, sem alta disponibilidade.
+- **Migrações do banco:** ainda não há como aplicá-las no staging nem na produção. Só o ambiente local as aplica, na subida do contêiner da API. A imagem de produção sobe apenas a aplicação: ela não leva a ferramenta de migração nem os arquivos de migração. O que falta decidir está nas questões em aberto da seção 7.
+
+## 7. Decisões, riscos e questões em aberto
 
 **Decisões e alternativas descartadas**
 
@@ -223,6 +287,10 @@ Apagar o link corta o acesso na hora, porque as URLs assinadas expiram em minuto
 | JWT de 15 minutos + renovação com hash no banco | JWT longo, totalmente stateless | Permite cortar o acesso ao sair ou trocar a senha. |
 | Checkout hospedado e webhook como fonte da verdade | Formulário de cartão próprio | Evita as exigências de PCI e a liberação de cota por retorno forjado. |
 | Google Cloud, uma região em São Paulo | Fornecedores combinados ou servidores próprios | Dados no Brasil sob um único contrato e operação gerenciada. |
+| Desenvolvimento todo local, com emuladores | Projeto de desenvolvimento no Google Cloud | Sem credencial nem custo por desenvolvedor, e cada pessoa tem dados isolados. |
+| Aplicação dentro do Docker Compose | Aplicação direto na máquina ou Dev Container | Mesmo ambiente para todos, sem depender do editor. |
+| Driver local no lugar do Cloud Tasks | Emulador do Cloud Tasks | Os emuladores são projetos da comunidade, sem suporte do Google. |
+| Webhooks de pagamento simulados | Túnel público para o sandbox do gateway | Funciona sem internet e cobre os casos de falha. O túnel fica para quando o gateway for escolhido. |
 
 **Riscos**
 
@@ -234,6 +302,7 @@ Apagar o link corta o acesso na hora, porque as URLs assinadas expiram em minuto
 | Segurança da autenticação sob responsabilidade própria | Usar bibliotecas consolidadas do NestJS e limitar tentativas de login. |
 | Miniaturas leem o conteúdo de imagens | Descrever esse processamento na política de privacidade. |
 | Dimensionamento baseado em hipóteses de usuários | Rever os valores quando a meta de contas for definida. |
+| Emulador de storage divergente do Cloud Storage esconde bugs de upload | Testes de ponta a ponta do upload no staging, contra o serviço real. |
 
 **Questões em aberto**
 
@@ -243,4 +312,9 @@ Apagar o link corta o acesso na hora, porque as URLs assinadas expiram em minuto
 - [ ] Confirmação do limite de 5 GB por arquivo e dos 30 dias de lixeira, que o brief deixou em aberto.
 - [ ] Alta disponibilidade do Cloud SQL (réplica em outra zona): custo contra a meta de 99,5%.
 - [ ] Observabilidade: logs, métricas e alertas ainda não foram desenhados.
+- [ ] Compatibilidade do `fake-gcs-server` com sessão de upload retomável e URLs assinadas.
+- [ ] Escolha entre Terraform e OpenTofu para a infraestrutura como código.
+- [ ] Forma da `DATABASE_URL` no staging e na produção. A validação da API hoje recusa a URL por socket do Cloud SQL, que tem o host vazio e o caminho do socket no parâmetro `host`. Falta decidir se a API conecta por socket ou por TCP; se for por socket, a validação passa a aceitar essa forma.
+- [ ] Formato das chaves do JWT nos segredos. A validação só aceita o PEM com quebras de linha reais. Falta decidir se o meio que entrega o segredo as preserva, ou se a API passa a aceitar a chave numa linha só, com `\n` escapado.
+- [ ] Migrações do banco no staging e na produção. Falta decidir quem as executa (um passo da esteira antes da publicação, ou uma tarefa do Cloud Run), com qual imagem (a da aplicação, acrescida da ferramenta de migração, ou uma imagem própria), com qual credencial de banco e em que ordem em relação à troca de versão da aplicação, já que a mesma imagem é promovida do staging para a produção.
 - [ ] Prazo, equipe e orçamento, que continuam indefinidos no brief.

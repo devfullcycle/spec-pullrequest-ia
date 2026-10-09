@@ -1,0 +1,23 @@
+# Imagem de desenvolvimento: o código entra por volume (ver compose.dev.yaml na raiz).
+FROM node:24-slim
+
+# procps: o modo watch do Nest usa o `ps` para encerrar o processo anterior a cada recarga.
+# openssl: o motor de migrações do Prisma depende dele.
+RUN apt-get update && apt-get install -y --no-install-recommends procps openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g pnpm@11.6.0
+
+WORKDIR /app
+
+USER node
+
+# Sem isto, o pnpm cria o store dentro do código montado.
+RUN pnpm config set store-dir /home/node/.pnpm-store --location=global
+
+EXPOSE 3000
+
+# Prepara o ambiente na subida (dependências, .env, chaves do JWT e migrações) e depois
+# só mantém o contêiner de pé; os comandos são rodados com `docker compose exec`.
+# O arquivo /tmp/api-ready avisa o healthcheck do Compose de que a preparação terminou.
+CMD ["sh", "-c", "rm -f /tmp/api-ready && pnpm install && pnpm setup:dev && touch /tmp/api-ready && exec tail -f /dev/null"]

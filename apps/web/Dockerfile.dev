@@ -1,0 +1,20 @@
+# Imagem de desenvolvimento: o código entra por volume (ver compose.dev.yaml na raiz).
+FROM node:24-slim
+
+RUN npm install -g pnpm@11.6.0
+
+WORKDIR /app
+
+USER node
+
+# Sem isto, o pnpm cria o store dentro do código montado.
+RUN pnpm config set store-dir /home/node/.pnpm-store --location=global
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+EXPOSE 3000
+
+# Instala as dependências na subida e depois só mantém o contêiner de pé;
+# os comandos são rodados com `docker compose exec`.
+# O arquivo /tmp/web-ready avisa o healthcheck do Compose de que a instalação terminou.
+CMD ["sh", "-c", "rm -f /tmp/web-ready && pnpm install && touch /tmp/web-ready && exec tail -f /dev/null"]

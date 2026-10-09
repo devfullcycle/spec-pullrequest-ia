@@ -1,0 +1,18 @@
+# compiled output
+/dist
+/node_modules
+*.tsbuildinfo
+
+# Prisma client, gerado por `prisma generate`
+/src/generated
+
+# tests
+/coverage
+
+# logs
+npm-debug.log*
+pnpm-debug.log*
+
+# env files
+.env*
+!.env.example

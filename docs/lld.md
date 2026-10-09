@@ -16,20 +16,27 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 │   │   │   ├── (auth)/       # login, cadastro, redefinição de senha
 │   │   │   ├── (drive)/      # pastas, lixeira, busca, planos
 │   │   │   └── s/[token]/    # página pública do link compartilhado
+│   │   ├── components/
+│   │   │   ├── ui/           # primitivos do design system (botões, campos, menu, diálogo)
+│   │   │   └── <domínio>/    # navigation, files, sharing, plans, auth
 │   │   ├── lib/api/          # cliente da API, usado só no servidor
-│   │   └── lib/session/      # leitura e renovação dos cookies de token
+│   │   ├── lib/session/      # leitura e renovação dos cookies de token
+│   │   ├── lib/dal/          # camada de acesso a dados: confere a Sessão na API
+│   │   └── proxy.ts          # renova os cookies e redireciona antes de cada rota
 │   └── api/                  # NestJS (API e worker, mesma imagem)
 │       ├── prisma/           # schema.prisma e migrações
 │       └── src/
 │           ├── modules/
-│           │   ├── auth/
+│           │   ├── users/    # dono da tabela users e de GET /me
+│           │   ├── auth/     # Sessões, tokens de e-mail, cadastro e login
 │           │   ├── items/
 │           │   ├── uploads/
 │           │   ├── sharing/
 │           │   ├── quota/
 │           │   ├── billing/
 │           │   └── worker/   # endpoints internos das tarefas
-│           ├── infra/        # storage, tasks, mail, payment gateway
+│           ├── config/       # módulo de config: schema e leitura das variáveis de ambiente
+│           ├── infra/        # database (cliente do Prisma), storage, tasks, mail, payment gateway
 │           └── common/       # guards, filtros de erro, rate limit
 └── packages/
     └── shared/               # tipos do contrato da API e códigos de erro
@@ -37,26 +44,34 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 
 | Decisão | Escolha |
 | --- | --- |
-| ORM e migrações | Prisma. As consultas recursivas de pastas usam SQL puro (`$queryRaw`). |
-| Validação de entrada | class-validator nos DTOs |
+| ORM e migrações | Prisma 7, com o driver `pg`. As consultas recursivas de pastas usam SQL puro (`$queryRaw`). O Prisma 8 ainda é release candidate e troca a API do cliente, então a versão fica fixada na 7 até ele estabilizar. |
+| Envio de e-mail | nodemailer, por SMTP, atrás da interface de `infra/mail` |
+| Validação de entrada | class-validator nos DTOs da API e zod nos formulários da web |
+| Configuração da API | `@nestjs/config`, com um schema do Joi que valida as variáveis de ambiente na subida |
+| Textos da interface | Só em português, sem biblioteca de tradução |
 | Documentação da API | OpenAPI gerado pelo NestJS (Swagger) |
 | Autenticação | `@nestjs/jwt` com um guard próprio, sem Passport. Argon2 para o hash da senha. |
 | Storage e fila | SDKs oficiais do Google Cloud (Storage e Cloud Tasks) |
-| Testes | Jest na API e Playwright para os fluxos de ponta a ponta |
+| Testes | Vitest na API e Playwright para os fluxos de ponta a ponta |
+| Lint e formatação | oxlint e Prettier na API, ESLint na web |
 
-**Camadas de cada módulo da API**
+**Práticas de código da API:** as camadas de cada módulo, a direção das dependências, o tratamento de erros, os nomes de arquivos, os níveis de teste e o módulo de config estão no `AGENTS.md` do projeto `api`, e não neste documento.
 
-- **Controller:** rotas HTTP, DTOs e validação.
-- **Service:** regras de negócio e transações.
-- **Repository:** acesso ao banco.
-
-Um módulo só chama outro pelo service público dele, nunca pelas tabelas. As integrações externas (storage, fila, e-mail, gateway) ficam atrás de interfaces em `infra/`, para que a troca de fornecedor fique restrita a um arquivo.
+**Práticas de código da web:** a preferência por Server Components, as regras de cache, o acesso a dados e os formulários estão no `AGENTS.md` do projeto `web`, e não neste documento.
 
 **Chamadas do frontend:** o Next.js chama a API sempre no servidor (Server Components, Server Actions e Route Handlers). O navegador só fala direto com o Cloud Storage, para upload e download.
+
+**IP do usuário:** como as chamadas saem do servidor do Next.js, a API enxergaria o IP da web. A web repassa o IP do navegador no cabeçalho `X-Client-Ip`, junto com o segredo `INTERNAL_API_SECRET` no cabeçalho `X-Internal-Secret`. A API só usa o IP repassado quando o segredo confere. Sem ele, ou com um IP repassado que não é um endereço válido, vale o IP da conexão. Um segredo que chega e não confere vai para o log da API, no máximo uma vez por minuto: é o sinal de que a web e a API estão com valores diferentes.
+
+O IP que a web repassa é o último endereço do `X-Forwarded-For` da requisição do navegador, que é o que o Cloud Run acrescenta. Os endereços anteriores vêm do próprio navegador e não são confiáveis. Se um balanceador entrar na frente da web, o endereço certo deixa de ser o último, e esta regra muda junto.
+
+**Pacote compartilhado:** o `packages/shared` e o workspace na raiz ainda não existem. Enquanto o contrato for pequeno, cada projeto mantém os próprios tipos. A migração para o workspace exige mudar os volumes e os Dockerfiles do Compose.
 
 ## 2. Esquema do banco
 
 **Convenções:** nomes em inglês e `snake_case`, chaves primárias em UUID v7 gerado pela aplicação, tamanhos em `BIGINT` (bytes), datas em `TIMESTAMPTZ` (UTC) e valores monetários em centavos.
+
+**Extensões:** a primeira migração habilita `citext` (texto insensível a maiúsculas, usado no e-mail) e `pg_trgm` (trigramas, usados na busca). Ela não cria nenhuma tabela: cada tabela nasce na migração da funcionalidade dona dela.
 
 ```mermaid
 erDiagram
@@ -79,9 +94,14 @@ erDiagram
 | `email` | `CITEXT` | Único |
 | `password_hash` | `TEXT` | Argon2id |
 | `email_verified_at` | `TIMESTAMPTZ` | Nulo até a verificação |
+| `terms_accepted_at` | `TIMESTAMPTZ` | Aceite dos termos e da política de privacidade, gravado no cadastro |
 | `plan_id` | `UUID` | Referência a `plans`. Começa no plano gratuito. |
 | `used_bytes` | `BIGINT` | Padrão 0. Restrição `used_bytes >= 0`. |
 | `created_at`, `updated_at` | `TIMESTAMPTZ` | |
+
+O e-mail é gravado sem os espaços das pontas. O `CITEXT` ignora maiúsculas, e não há outra normalização: `joao+x@gmail.com` e `joao@gmail.com` são usuários diferentes.
+
+`plan_id` e `used_bytes` não fazem parte da primeira migração. Eles são acrescentados, junto com a tabela `plans`, pela funcionalidade de cota.
 
 ### refresh_tokens
 
@@ -89,6 +109,7 @@ erDiagram
 | --- | --- | --- |
 | `id` | `UUID` | Chave primária |
 | `user_id` | `UUID` | Referência a `users`, com exclusão em cascata |
+| `session_id` | `UUID` | Agrupa a cadeia de tokens de uma mesma Sessão. Gerado no login. |
 | `token_hash` | `TEXT` | SHA-256 do token. Único. |
 | `expires_at` | `TIMESTAMPTZ` | 30 dias após a emissão |
 | `rotated_at` | `TIMESTAMPTZ` | Preenchido quando o token é trocado |
@@ -105,6 +126,8 @@ erDiagram
 | `token_hash` | `TEXT` | Único |
 | `expires_at` | `TIMESTAMPTZ` | 24 horas para verificação, 1 hora para redefinição |
 | `used_at` | `TIMESTAMPTZ` | Uso único |
+
+Emitir um token substitui o anterior do mesmo usuário e do mesmo tipo: `(user_id, type)` é único, e por isso só o link mais recente funciona, mesmo com emissões simultâneas.
 
 ### items
 
@@ -188,9 +211,11 @@ Como só o hash é guardado, a URL do link é exibida uma única vez, na criaç�
 
 | Coluna | Tipo | Observação |
 | --- | --- | --- |
-| `key` | `TEXT` | Chave primária, por exemplo `login:account:<id>` |
+| `key` | `TEXT` | Chave primária, por exemplo `login:email:<hash do e-mail>` ou `login:ip:<ip>` |
 | `window_start` | `TIMESTAMPTZ` | Início da janela |
 | `count` | `INTEGER` | Contador da janela |
+
+Cada chave tem uma linha só, com a janela atual. A janela abre na primeira tentativa e dura o tempo configurado, sem se esticar com as tentativas seguintes. A primeira tentativa depois de ela fechar abre outra, com o contador em 1. O relógio da janela é o do banco, que é um só para todas as instâncias da API.
 
 Os contadores ficam no PostgreSQL porque as instâncias do Cloud Run não compartilham memória. Uma troca futura por Redis fica restrita ao módulo `common/rate-limit`.
 
@@ -213,6 +238,7 @@ Os contadores ficam no PostgreSQL porque as instâncias do Cloud Run não compar
 | HTTP | `code` | Quando |
 | --- | --- | --- |
 | 400 | `validation_error` | Entrada inválida |
+| 400 | `invalid_token` | Token de verificação ou de redefinição inexistente, expirado ou já usado |
 | 400 | `invalid_move` | Mover uma pasta para dentro dela mesma ou de uma descendente |
 | 400 | `max_depth_exceeded` | Mais de 50 níveis de pastas |
 | 401 | `unauthenticated` | Token ausente, inválido ou expirado |
@@ -225,21 +251,57 @@ Os contadores ficam no PostgreSQL porque as instâncias do Cloud Run não compar
 | 413 | `file_too_large` | Arquivo acima de 5 GB |
 | 413 | `quota_exceeded` | Sem espaço no plano |
 | 429 | `rate_limited` | Limite de requisições atingido |
+| 500 | `internal_error` | Falha não prevista. A resposta não traz mensagem interna nem stack trace. |
+
+**Corpo do erro**
+
+Todo erro sai com `Content-Type: application/problem+json` e este corpo:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Bad Request",
+  "status": 400,
+  "code": "validation_error",
+  "detail": "A entrada é inválida.",
+  "errors": [{ "field": "email", "messages": ["email must be an email"] }]
+}
+```
+
+| Campo | Conteúdo |
+| --- | --- |
+| `type` | Sempre `about:blank`. Quem identifica o erro é o `code`. |
+| `title` | O nome padrão do status HTTP |
+| `status` | O mesmo status da resposta |
+| `code` | O código estável da tabela acima. É o único campo que a web usa para decidir a mensagem. |
+| `detail` | Texto de apoio para quem desenvolve. Só aparece nos erros de regra de negócio e de validação. |
+| `errors` | Só em `validation_error` de um corpo que não passou na validação: um item por campo, com o caminho do campo (`address.city` nos aninhados) e as mensagens |
+
+- **Rota inexistente:** responde 404 com `not_found`.
+- **Corpo malformado:** um JSON que não pode ser lido responde 400 com `validation_error`, sem `errors`.
+- **Campos desconhecidos:** os campos que a rota não declara são descartados, sem erro.
+- **Outros erros do framework:** um status que não está na tabela (405, 415 etc.) usa como `code` o nome do status em `snake_case`, por exemplo `method_not_allowed`.
+- **Erro 5xx lançado de propósito:** quando o código responde de propósito com 501, 502, 503 ou 504, o status é mantido e o `code` é o nome dele (`service_unavailable`). A resposta continua sem `detail`, e a falha vai para o log.
+- **Erro de terceiros:** só o que o framework levanta escolhe o status. Um erro de uma biblioteca ou do SDK de um fornecedor é sempre `internal_error`, mesmo que ele traga um status próprio.
+- **Falha depois de a resposta começar:** se o erro acontece com a resposta já em envio, não dá mais para mandar o corpo de erro. A API registra a falha e derruba a conexão, para o cliente perceber que a resposta veio incompleta.
 
 ### 3.2 Autenticação e conta
 
 | Método e rota | Entrada | Saída |
 | --- | --- | --- |
-| `POST /auth/register` | `email`, `password` | 201. Envia o e-mail de verificação. |
-| `POST /auth/verify-email` | `token` | 204 |
+| `POST /auth/register` | `email`, `password` | 201, mesmo se o e-mail já existir. Envia um e-mail, que varia conforme o caso (seção 4.7). |
+| `POST /auth/verify-email` | `token` | 204. Não abre Sessão. |
+| `POST /auth/resend-verification` | `email` | 204, mesmo se o e-mail não existir ou já estiver verificado |
 | `POST /auth/login` | `email`, `password` | `accessToken`, `refreshToken`, `expiresIn` |
 | `POST /auth/refresh` | `refreshToken` | Novo par de tokens |
-| `POST /auth/logout` | `refreshToken` | 204 |
-| `POST /auth/logout-all` | | 204. Revoga todos os tokens de renovação. |
+| `POST /auth/logout` | `refreshToken` | 204, mesmo com token inválido ou expirado. Encerra a Sessão do token. |
+| `POST /auth/logout-all` | | 204. Encerra todas as Sessões do usuário. |
 | `POST /auth/forgot-password` | `email` | 204, mesmo se o e-mail não existir |
-| `POST /auth/reset-password` | `token`, `password` | 204. Revoga todos os tokens de renovação. |
+| `POST /auth/reset-password` | `token`, `password` | 204. Encerra todas as Sessões e não abre uma nova. |
 | `GET /me` | | `id`, `email`, `plan`, `usedBytes`, `quotaBytes`, `readOnly` |
-| `PATCH /me/password` | `currentPassword`, `newPassword` | 204. Revoga os outros tokens de renovação. |
+| `PATCH /me/password` | `currentPassword`, `newPassword` | 204. Encerra as outras Sessões. |
+
+`GET /me` pertence ao módulo `users`. Até a funcionalidade de cota existir, ele devolve só `id` e `email`. `POST /auth/logout-all` e `PATCH /me/password` dependem de uma tela de conta e não fazem parte da primeira entrega de autenticação.
 
 ### 3.3 Itens, lixeira e busca
 
@@ -371,8 +433,17 @@ stateDiagram-v2
 
 - **Token de acesso:** JWT com `sub` (id do usuário) e `exp`, assinado com RS256 e validado só pela assinatura.
 - **Token de renovação:** valor opaco de 256 bits, guardado só como hash. Cada renovação emite um novo par e marca o token antigo como trocado.
-- **Reuso de um token já trocado:** todos os tokens de renovação do usuário são revogados, por indicar possível roubo. Para não derrubar duas abas que renovam ao mesmo tempo, o token antigo continua aceito por 10 segundos depois da troca.
-- **Cookies no Next.js:** os dois tokens ficam em cookies `HttpOnly`, `Secure` e `SameSite=Lax`. Quando o token de acesso expira, o Next.js chama `/auth/refresh` no servidor e regrava os cookies.
+- **Sessão:** é o login de um usuário em um navegador. Todos os tokens de renovação emitidos a partir de um mesmo login carregam o mesmo `session_id`. Sair apaga todos os tokens da Sessão. Não há limite de Sessões simultâneas por usuário.
+- **Reuso de um token já trocado:** todas as Sessões do usuário são encerradas, por indicar possível roubo, e a resposta é `unauthenticated`. Isso vale mesmo que o token trocado já tenha expirado. Para não derrubar requisições que renovam ao mesmo tempo, o token antigo continua aceito por 10 segundos depois da troca. A janela conta da primeira troca, não se estica com os usos seguintes e fecha no décimo segundo, inclusive. O reuso e o encerramento das Sessões valem juntos, na mesma transação.
+- **Token de renovação inexistente ou expirado:** a renovação responde `unauthenticated`, sem encerrar nenhuma Sessão.
+- **Renovações simultâneas:** dentro dos 10 segundos, cada chamada com o token antigo recebe um par novo e válido, na mesma Sessão. A cadeia bifurca, o último cookie gravado vence e os tokens que sobram expiram sozinhos.
+- **Trocas e encerramentos em fila:** a renovação, o logout e o encerramento de todas as Sessões de um mesmo usuário rodam um por vez no banco. Assim, uma renovação que corre junto com o logout não deixa um token novo numa Sessão que acabou de ser apagada.
+- **Cookies no Next.js:** os dois tokens ficam em cookies `HttpOnly`, `Secure` e `SameSite=Lax`. O `Secure` é desligado por `COOKIE_SECURE=false` no ambiente local, que usa HTTP. O cookie do token de acesso dura o mesmo que o token, e o do token de renovação, 30 dias, a validade padrão dele.
+- **Renovação no `proxy.ts`:** antes de cada rota, o Proxy lê o `exp` do token de acesso, sem conferir a assinatura. Se ele expirou, o Proxy chama `/auth/refresh` e regrava os cookies. O token conta como expirado 5 segundos antes do `exp`, para não vencer no caminho até a API. Os tokens novos seguem também na requisição, para a rota já renderizar com eles. O Proxy espera a renovação por 5 segundos, menos que a janela de tolerância: se a API troca o token e a resposta se perde, a tentativa seguinte ainda é aceita. Se a API recusa o token de renovação, ele apaga os cookies e redireciona para o login, com o aviso "Sua sessão expirou" (`/entrar?aviso=sessao-expirada`). Se a API falha, a Sessão não é encerrada: os cookies ficam, a pessoa vai para o login sem o aviso, e a rota seguinte tenta renovar de novo. O Proxy também manda para o login quem não tem Sessão e tira das telas `(auth)` quem tem.
+- **Server Actions no Proxy:** uma Server Action não é redirecionada pelo Proxy, porque o navegador repetiria o envio na tela de entrar e mostraria um erro. Com ou sem Sessão, ela segue, e é a própria ação que confere a Sessão. É o que deixa o "Sair" funcionar com a Sessão já expirada.
+- **Verificação na web:** a web não tem a chave pública nem valida o JWT. Toda página e Server Action protegida passa pela camada de acesso a dados (`lib/dal`), que chama `GET /me`. Um `401` ali derruba a Sessão: como a renderização de uma página não pode apagar cookies, a camada leva à rota `/sessao-encerrada`, que confere a Sessão de novo na API e tenta renová-la. Se a renovação passa, a pessoa volta ao produto com o par novo. Se a API recusa o token de renovação, a rota apaga os cookies e leva ao login, com o mesmo aviso. O Proxy é só um filtro otimista, nunca a única barreira.
+- **Volta ao destino:** quem é barrado numa rota protegida volta para ela depois de entrar. O Proxy leva a página pedida no parâmetro `destino` da tela de entrar. O destino só aceita caminhos internos, e qualquer outro valor leva à página inicial.
+- **Rotas protegidas por padrão:** o Proxy tem a lista das telas de autenticação e a das rotas públicas. Toda rota fora das duas exige Sessão.
 
 ### 4.6 Upload em chunks
 
@@ -421,6 +492,60 @@ O navegador envia cada arquivo em chunks sequenciais para a sessão de upload re
 
 Esses dois pontos vêm do meu conhecimento da API do Cloud Storage e não foram testados neste projeto. Vale confirmá-los na documentação atual antes de implementar.
 
+### 4.7 Cadastro, verificação e senha
+
+**Cadastro**
+
+O cadastro nunca revela se um e-mail já tem usuário. A resposta é sempre 201, e o que muda é o e-mail enviado.
+
+| Situação do e-mail | Efeito | E-mail enviado |
+| --- | --- | --- |
+| Novo | Cria o usuário, não verificado | Verificação |
+| Já cadastrado, não verificado | Substitui a senha e a data do aceite dos termos pelas novas e invalida os links anteriores | Verificação |
+| Já cadastrado e verificado | Nenhum | "Você já tem conta", com os caminhos para entrar e redefinir a senha |
+
+- **O último cadastro vence:** sem isso, quem cadastrasse primeiro o e-mail de outra pessoa ficaria com a senha de um usuário que ela mesma verificaria depois.
+- **Risco residual aceito:** se um estranho se cadastrar depois do dono e o dono clicar no link do estranho, o usuário fica verificado com a senha do estranho. O usuário ainda está vazio, o dono não consegue entrar e usa "esqueci a senha", que troca a senha e encerra todas as Sessões.
+- **Aceite dos termos:** a tela mostra a frase de aceite com os links, sem checkbox, e o cadastro grava `terms_accepted_at`.
+
+**Verificação de e-mail**
+
+- Usuário não verificado não entra: o login responde `email_not_verified`. Não há Sessão limitada.
+- Verificar não abre Sessão. O usuário é levado ao login, com um aviso de sucesso.
+- O reenvio emite um novo token e invalida o anterior.
+- Depois do cadastro ou do pedido de outro link, a web guarda o e-mail num cookie `HttpOnly` de uma hora, restrito à tela "confira seu e-mail", para mostrá-lo e reenviar a verificação. O endereço não vai para a URL.
+- Se a verificação falha depois de o token ser gasto, a API devolve o token, e o mesmo link volta a valer.
+- O link do e-mail aponta para a web, que gasta o token na API e leva a pessoa ao login. Um link inválido, expirado ou já usado leva à tela de link inválido, de onde ela pede outro.
+
+**Redefinição de senha**
+
+- O pedido responde 204 exista ou não o usuário, e só envia o e-mail no primeiro caso. Pedir outro link invalida o anterior.
+- A API responde ao pedido logo depois de buscar o usuário, que custa o mesmo nos dois casos. A gravação do token e o envio do e-mail seguem sem espera, para o tempo de resposta não revelar se o e-mail tem usuário. Uma falha na gravação só é registrada em log, como a de envio.
+- Funciona também para usuário não verificado.
+- Concluir a redefinição marca o e-mail como verificado, porque a pessoa provou que controla a caixa.
+- Encerra todas as Sessões, não abre uma nova e envia o e-mail "sua senha foi alterada". As Sessões são encerradas antes de a senha mudar: se a troca falha, a pessoa só precisa entrar de novo, e nunca fica com a senha nova e as Sessões antigas abertas. O token de acesso já emitido continua valendo até expirar, porque a API o valida só pela assinatura.
+- Uma senha nova fora da regra é recusada antes de o token ser gasto, e o mesmo link continua valendo.
+- A tela do pedido (`/esqueci-minha-senha`) abre com ou sem Sessão, porque a tela de link inválido e o e-mail "sua senha foi alterada" levam a ela.
+- Se a redefinição falha depois de o token ser gasto, a API devolve o token, como na verificação de e-mail.
+- O link do e-mail aponta para a tela de nova senha da web (`/redefinir-senha`), que abre com ou sem Sessão. Só a API sabe se o token vale, então um link inválido, expirado ou já usado só é descoberto no envio da senha nova, e leva à tela de link inválido, de onde a pessoa pede outro.
+- Depois do pedido, a web guarda o e-mail num cookie `HttpOnly` de uma hora, restrito à tela de confirmação de envio, para mostrá-lo. A tela diz o mesmo exista ou não o usuário.
+- Concluída a redefinição, a web apaga os cookies de token do navegador e leva à tela de entrar, com o aviso "senha redefinida" (`/entrar?aviso=senha-redefinida`).
+
+**Limite de tentativas**
+
+- Vale para o login, o cadastro, o reenvio de verificação e o "esqueci a senha", com os tetos e as janelas da seção 6. Cada rota tem os próprios contadores, um por e-mail e um por IP: o cadastro, o reenvio e o "esqueci a senha" dividem os tetos, e não o contador.
+- A chave "por conta" é o hash do e-mail digitado, exista ou não o usuário. Assim o bloqueio não revela quem tem cadastro. As maiúsculas e os espaços das pontas não contam, para o mesmo endereço não ganhar um contador por grafia.
+- Toda tentativa conta, inclusive o login com a senha certa. A contagem vem antes de qualquer consulta ao usuário, e a resposta bloqueada é a mesma exista ele ou não. Uma entrada que a validação recusa não é contada.
+- A tentativa é contada nas duas chaves mesmo quando uma delas já estourou.
+- O IP é o do navegador, repassado pela web (seção 1). As grafias do mesmo endereço contam juntas: um IPv6 abreviado ou por extenso, e o IPv4 embrulhado em IPv6.
+- Estourado o limite, a resposta é `rate_limited` até a janela fechar, mesmo com a senha certa. Um terceiro consegue travar o login de alguém por 15 minutos; o MVP aceita esse risco.
+
+**Envio de e-mail**
+
+- A API envia por SMTP, atrás da interface de `infra/mail`, e responde sem esperar o envio terminar. Isso também evita que o tempo de resposta revele se o e-mail existe.
+- Uma falha de envio só é registrada em log. O usuário usa o reenvio.
+- Os e-mails são de texto simples com a marca, sem desenho no Figma.
+
 ## 5. Tarefas do worker
 
 O worker é a mesma imagem da API, publicada como um serviço separado do Cloud Run. Ele expõe endpoints HTTP internos, que só aceitam chamadas autenticadas (OIDC) do Cloud Tasks e do Cloud Scheduler. Todas as tarefas são idempotentes.
@@ -448,9 +573,11 @@ O worker é a mesma imagem da API, publicada como um serviço separado do Cloud 
 | --- | --- |
 | Token de acesso | 15 minutos |
 | Token de renovação | 30 dias, com rotação a cada uso |
+| Tolerância ao reuso de um token de renovação trocado | 10 segundos |
 | Token de acesso a link com senha | 15 minutos |
-| Senha | Mínimo de 10 caracteres, com hash Argon2id |
-| Tentativas de login | 5 por conta e 20 por IP a cada 15 minutos |
+| Senha | De 10 a 128 caracteres, sem regra de composição, com hash Argon2id |
+| Tentativas de login | 5 por e-mail e 20 por IP a cada 15 minutos |
+| Cadastro, reenvio de verificação e "esqueci a senha" | 3 por e-mail e 10 por IP a cada hora |
 | Tentativas de senha de link público | 10 por link a cada 15 minutos |
 | Limite geral da API | 300 requisições por minuto por usuário |
 | Tamanho máximo por arquivo | 5 GB |
@@ -459,6 +586,8 @@ O worker é a mesma imagem da API, publicada como um serviço separado do Cloud 
 | Retenção da lixeira | 30 dias |
 | Tolerância de pagamento | 7 dias |
 | Profundidade de pastas | 50 níveis |
+
+A retenção da lixeira, o prazo de upload pendente, a validade dos tokens, a tolerância ao reuso e os tetos e as janelas das tentativas de login e dos pedidos de e-mail são lidos de variáveis de ambiente. Os valores da tabela são os padrões de produção, e o ambiente local pode reduzi-los para testar.
 
 **CORS**
 
@@ -469,21 +598,46 @@ O worker é a mesma imagem da API, publicada como um serviço separado do Cloud 
 
 | Variável | Projeto | Conteúdo |
 | --- | --- | --- |
-| `DATABASE_URL` | api | Conexão com o Cloud SQL (segredo) |
-| `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | Par de chaves RS256 (segredo) |
+| `PORT` | api | Porta HTTP, com padrão 3000. O Cloud Run a define em produção. |
+| `DATABASE_URL` | api | Conexão com o Cloud SQL (segredo). No desenvolvimento, aponta para o `postgres`. |
+| `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | Par de chaves RSA do RS256, em PEM (segredo). São aceitos os formatos PKCS#8, SPKI e PKCS#1. |
 | `GCS_BUCKET` | api | Nome do bucket privado |
 | `TASKS_QUEUE`, `WORKER_URL` | api | Fila do Cloud Tasks e endereço do worker |
+| `QUEUE_DRIVER` | api | `cloud-tasks` em staging e produção, `local` no desenvolvimento (chamada HTTP direta ao worker) |
+| `STORAGE_EMULATOR_HOST` | api | Endereço do emulador de storage, só no desenvolvimento |
+| `TRASH_RETENTION_DAYS`, `PENDING_UPLOAD_TTL_HOURS` | api | Padrões de 30 dias e 24 horas |
+| `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS` | api | Validade do token de acesso e do token de renovação, em segundos. Padrões de 900 (15 minutos) e 2592000 (30 dias). |
+| `REFRESH_TOKEN_REUSE_GRACE_SECONDS` | api | Por quanto tempo um token de renovação já trocado ainda é aceito, em segundos. Padrão de 10. Zero desliga a tolerância. |
+| `EMAIL_VERIFICATION_TTL_SECONDS` | api | Validade do link de verificação de e-mail, em segundos. Padrão de 86400 (24 horas). |
+| `PASSWORD_RESET_TTL_SECONDS` | api | Validade do link de redefinição de senha, em segundos. Padrão de 3600 (1 hora). |
 | `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | api | Credenciais do gateway (segredo) |
-| `MAIL_API_KEY`, `MAIL_FROM` | api | Serviço de e-mail (segredo) |
-| `WEB_ORIGIN` | api | Origem do frontend, para CORS e links de e-mail |
+| `SMTP_URL`, `MAIL_FROM` | api | Servidor SMTP do serviço de e-mail (segredo) e remetente. No desenvolvimento, aponta para o `mailpit`. |
+| `DATABASE_CONNECT_TIMEOUT_MS` | api | Quanto esperar o banco para abrir uma conexão, em milissegundos. Padrão de 10000. |
+| `SMTP_TIMEOUT_MS` | api | Quanto esperar o servidor SMTP para resolver o nome, conectar e saudar, em milissegundos. Padrão de 10000. |
+| `SMTP_IDLE_TIMEOUT_MS` | api | Quanto uma conexão SMTP aberta pode ficar sem tráfego, durante um envio ou entre um envio e outro, em milissegundos. Padrão de 60000. |
+| `WEB_ORIGIN` | api | Origem do frontend, para CORS e links de e-mail: esquema, host e porta, sem caminho nem barra no fim. No desenvolvimento, é o endereço que a pessoa abre no navegador (`http://localhost:3000`). |
+| `INTERNAL_API_SECRET` | api e web | Segredo que autoriza a web a repassar o IP do usuário (segredo). Tem pelo menos 32 caracteres, e o valor é o mesmo nos dois projetos. |
+| `LOGIN_RATE_LIMIT_PER_EMAIL`, `LOGIN_RATE_LIMIT_PER_IP`, `LOGIN_RATE_LIMIT_WINDOW_SECONDS` | api | Tentativas de login por e-mail e por IP, e a janela, em segundos. Padrões de 5, 20 e 900 (15 minutos). |
+| `EMAIL_REQUEST_RATE_LIMIT_PER_EMAIL`, `EMAIL_REQUEST_RATE_LIMIT_PER_IP`, `EMAIL_REQUEST_RATE_LIMIT_WINDOW_SECONDS` | api | Cadastros, reenvios de verificação e pedidos de "esqueci a senha" por e-mail e por IP, e a janela, em segundos. Padrões de 3, 10 e 3600 (1 hora). |
 | `API_URL` | web | Endereço interno da API |
 | `COOKIE_DOMAIN` | web | Domínio dos cookies de token |
+| `COOKIE_SECURE` | web | Padrão `true`. `false` só no desenvolvimento, que usa HTTP. |
+
+**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM`, `SMTP_TIMEOUT_MS`, `SMTP_IDLE_TIMEOUT_MS`, `DATABASE_CONNECT_TIMEOUT_MS`, `WEB_ORIGIN`, `EMAIL_VERIFICATION_TTL_SECONDS`, `PASSWORD_RESET_TTL_SECONDS`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_REUSE_GRACE_SECONDS`, `INTERNAL_API_SECRET` e as seis variáveis do limite de tentativas, e todas, menos `PORT`, os quatro prazos, as quatro validades, a janela de tolerância e as seis do limite de tentativas, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, que não pode ser lida, ou uma pública que não é o par da privada, impede a subida. O `MAIL_FROM` tem de trazer um endereço de e-mail, sozinho ou como `Nome <endereço>`. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
+
+**Ambiente local:** as variáveis da API ficam em `apps/api/.env`, fora do Git. Na primeira subida, o contêiner da API cria esse arquivo como cópia do `apps/api/.env.example`, que é versionado e funciona sem alterações, e um script gera as chaves do JWT e as grava nele. Quando o `.env.example` ganha uma variável, o mesmo script a acrescenta ao `.env` que já existe, sem trocar nenhum valor. Os hosts são sempre os nomes dos serviços do Compose. A `API_URL`, o `COOKIE_SECURE=false` e o `INTERNAL_API_SECRET` da web são definidos no próprio `compose.dev.yaml`, sem arquivo `.env`. O `.env.example` da API traz o mesmo segredo e sobe os tetos por IP, porque no ambiente local o navegador da pessoa e os testes no navegador saem todos do mesmo IP.
+
+**Banco de testes:** os testes da API usam um banco separado no mesmo PostgreSQL, com o nome do banco de `DATABASE_URL` mais o sufixo `_test`. Ele não tem variável própria.
 
 Os valores marcados como segredo vêm do Secret Manager e não ficam em arquivos versionados.
 
 ## Questões em aberto
 
 - [ ] Exclusão de conta pelo próprio usuário: está fora do MVP, mas a LGPD dá ao titular o direito de pedir a eliminação dos dados. Sem a função, o pedido é atendido manualmente.
+- [ ] Texto dos Termos e da Política de Privacidade: depende de validação jurídica. Até lá, os links do cadastro apontam para páginas provisórias.
+- [ ] Troca de e-mail pelo próprio usuário e lista de Sessões ativas: fora do MVP.
+- [ ] Limpeza de usuários nunca verificados: sem rotina por enquanto. Eles não bloqueiam o cadastro do dono do e-mail.
+- [ ] Captcha no cadastro e checagem da senha contra listas de senhas vazadas: fora do MVP.
 - [ ] Download de pasta inteira em ZIP: fica fora do MVP, e o usuário baixa arquivo por arquivo.
 - [ ] Operações em lote (mover ou excluir vários itens): o frontend faz uma chamada por item.
 - [ ] Direito de arrependimento de 7 dias em compras online: precisa de validação jurídica e pode exigir reembolso.

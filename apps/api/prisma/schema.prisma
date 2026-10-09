@@ -1,0 +1,73 @@
+// Esquema do banco. As convenções e as tabelas estão na seção 2 do docs/lld.md.
+// A URL de conexão fica no prisma.config.ts, e não aqui.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id              String    @id @db.Uuid
+  email           String    @unique @db.Citext
+  passwordHash    String    @map("password_hash")
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz
+  termsAcceptedAt DateTime  @map("terms_accepted_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  emailTokens   EmailToken[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model EmailToken {
+  id        String    @id @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  /// `verify_email` ou `reset_password`.
+  type      String
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Um token por Usuário e tipo: emitir outro substitui o anterior.
+  @@unique([userId, type])
+  @@map("email_tokens")
+}
+
+model RefreshToken {
+  id           String    @id @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  /// Agrupa a cadeia de tokens de uma mesma Sessão. Gerado no login.
+  sessionId    String    @map("session_id") @db.Uuid
+  /// SHA-256 do token.
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz
+  rotatedAt    DateTime? @map("rotated_at") @db.Timestamptz
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+/// Contador do limite de tentativas: uma linha por chave, com a janela atual.
+model RateLimit {
+  /// Por exemplo `login:email:<hash do e-mail>` ou `login:ip:<ip>`.
+  key         String   @id
+  windowStart DateTime @map("window_start") @db.Timestamptz
+  count       Int
+
+  @@map("rate_limits")
+}
