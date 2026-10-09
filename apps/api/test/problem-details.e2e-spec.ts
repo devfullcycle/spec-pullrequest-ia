@@ -1,5 +1,15 @@
-import { Body, Controller, Get, INestApplication, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  INestApplication,
+  Logger,
+  Post,
+  Res,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Type } from 'class-transformer';
+import type { Response } from 'express';
 import { IsEmail, IsString, MinLength, ValidateNested } from 'class-validator';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
@@ -50,6 +60,25 @@ class ProbeController {
   @Get('unexpected-error')
   unexpectedError() {
     throw new Error('segredo interno: a senha do banco é hunter2');
+  }
+
+  // Como o erro de um SDK de terceiro, que traz o status da chamada que ele fez.
+  @Get('third-party-error')
+  thirdPartyError() {
+    throw Object.assign(new Error('bucket interno hunter2 não existe'), {
+      statusCode: 404,
+    });
+  }
+
+  @Get('deliberate-503')
+  deliberate503() {
+    throw new ServiceUnavailableException('fila interna hunter2 fora do ar');
+  }
+
+  @Get('error-after-headers')
+  errorAfterHeaders(@Res() response: Response) {
+    response.status(200).type('text/plain').write('começo da resposta');
+    throw new Error('falhou depois de começar a responder');
   }
 }
 
@@ -198,6 +227,60 @@ describe('Formato de erro da API (RFC 9457)', () => {
       });
       expect(response.text).not.toContain('hunter2');
       expect(response.text).not.toContain('stack');
+    });
+
+    it('não confia no statusCode de um erro que não veio do framework', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/v1/probe/third-party-error')
+        .expect(500);
+
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Internal Server Error',
+        status: 500,
+        code: 'internal_error',
+      });
+    });
+
+    it('encerra a conexão quando a falha vem depois de a resposta ter começado', async () => {
+      // O log é a única saída que distingue este caso: o cliente só vê a conexão cair.
+      const logged = vi.spyOn(Logger.prototype, 'error');
+      try {
+        await expect(
+          request(app.getHttpServer()).get('/v1/probe/error-after-headers'),
+        ).rejects.toThrow();
+
+        // Só a falha original vai para o log, uma vez, e não o erro de tentar
+        // escrever uma segunda resposta.
+        expect(logged).toHaveBeenCalledTimes(1);
+        expect(String(logged.mock.calls[0][0])).toContain(
+          'falhou depois de começar a responder',
+        );
+      } finally {
+        logged.mockRestore();
+      }
+
+      // A aplicação continua de pé para a requisição seguinte.
+      await request(app.getHttpServer()).get('/v1/probe').expect(200);
+    });
+  });
+
+  describe('erro 5xx lançado de propósito', () => {
+    it('mantém o status e usa o nome dele como code, sem vazar a mensagem', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/v1/probe/deliberate-503')
+        .expect(503);
+
+      expect(response.headers['content-type']).toMatch(
+        /^application\/problem\+json/,
+      );
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Service Unavailable',
+        status: 503,
+        code: 'service_unavailable',
+      });
+      expect(response.text).not.toContain('hunter2');
     });
   });
 });

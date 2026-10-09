@@ -40,17 +40,19 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   rate_limited: 429,
 };
 
+const INTERNAL_ERROR = 'internal_error';
+
 /**
  * Código dos erros que nascem no framework, e não numa regra de negócio: rota
  * inexistente, corpo malformado etc. Os status que não estão aqui usam o nome
- * do próprio status (`method_not_allowed`).
+ * do próprio status (`method_not_allowed`, `service_unavailable`).
  */
 const CODE_BY_FRAMEWORK_STATUS: Record<number, string> = {
   400: 'validation_error',
   401: 'unauthenticated',
   404: 'not_found',
   429: 'rate_limited',
-  500: 'internal_error',
+  500: INTERNAL_ERROR,
 };
 
 /**
@@ -63,11 +65,18 @@ export class ProblemDetailsFilter implements ExceptionFilter {
   private readonly logger = new Logger(ProblemDetailsFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost): void {
-    const problem = this.toProblem(exception);
+    const response = host.switchToHttp().getResponse<Response>();
 
-    host
-      .switchToHttp()
-      .getResponse<Response>()
+    if (response.headersSent) {
+      // A resposta já começou a sair, então não dá mais para trocar o status
+      // nem o corpo. Derrubar a conexão avisa o cliente de que ela veio incompleta.
+      this.log(exception);
+      response.destroy();
+      return;
+    }
+
+    const problem = this.toProblem(exception);
+    response
       .status(problem.status)
       .type('application/problem+json')
       .json(problem);
@@ -86,21 +95,21 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       return problem;
     }
 
+    // A mensagem do framework nunca entra na resposta: ela não faz parte do contrato.
     const status = frameworkStatus(exception);
-    if (status !== undefined && status < 500) {
-      // A mensagem do framework não entra na resposta: ela não faz parte do contrato.
-      return this.problem(
-        status,
-        CODE_BY_FRAMEWORK_STATUS[status] ??
-          HttpStatus[status]?.toLowerCase() ??
-          'http_error',
-      );
+    if (status === undefined) {
+      this.log(exception);
+      return this.problem(500, INTERNAL_ERROR);
     }
-
-    this.logger.error(
-      exception instanceof Error ? (exception.stack ?? exception) : exception,
+    if (status >= 500) {
+      this.log(exception);
+    }
+    return this.problem(
+      status,
+      CODE_BY_FRAMEWORK_STATUS[status] ??
+        HttpStatus[status]?.toLowerCase() ??
+        (status >= 500 ? INTERNAL_ERROR : 'http_error'),
     );
-    return this.problem(500, CODE_BY_FRAMEWORK_STATUS[500]);
   }
 
   private problem(status: number, code: string): ProblemDetails {
@@ -111,23 +120,38 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       code,
     };
   }
+
+  private log(exception: unknown): void {
+    this.logger.error(
+      exception instanceof Error ? (exception.stack ?? exception) : exception,
+    );
+  }
 }
 
 /**
- * Status de um erro levantado pelo Nest (`HttpException`) ou por um middleware
- * do Express, como o leitor do corpo, que marca o erro com `statusCode`.
+ * Status de um erro que o próprio framework levantou. Só dois tipos contam:
+ *
+ * - `HttpException`, do Nest ou lançada de propósito pelo código;
+ * - erro do leitor do corpo do Express (JSON malformado, corpo grande demais),
+ *   que vem marcado com `expose`, `type` e um status 4xx.
+ *
+ * Qualquer outro erro é inesperado, mesmo que traga um `statusCode`: o SDK de um
+ * fornecedor costuma repassar ali o status da chamada que ele fez, e esse status
+ * não é a resposta desta API.
  */
 function frameworkStatus(exception: unknown): number | undefined {
   if (exception instanceof HttpException) {
     return exception.getStatus();
   }
   if (typeof exception === 'object' && exception !== null) {
-    const { statusCode } = exception as { statusCode?: unknown };
+    const { expose, type, statusCode } = exception as Record<string, unknown>;
     if (
+      expose === true &&
+      typeof type === 'string' &&
       typeof statusCode === 'number' &&
       Number.isInteger(statusCode) &&
       statusCode >= 400 &&
-      statusCode < 600
+      statusCode < 500
     ) {
       return statusCode;
     }
