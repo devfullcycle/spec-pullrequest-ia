@@ -95,6 +95,38 @@ Os comandos acima são os planejados para o monorepo com pnpm. Confira os script
 
 Rode todos eles dentro do contêiner do projeto, como descrito em [Execução no Docker](#execução-no-docker).
 
+## Issues e tickets no Linear
+
+O Linear é o gerenciador de issues do projeto, acessado pelo servidor MCP `linear-server`. Specs e tickets vivem lá, e não em arquivos do repositório.
+
+- **Time:** Luiz Carlos (`LUI`).
+- **Projeto:** gerenciador de arquivos.
+- **Labels de tipo:** `Feature`, `Bug` e `Improvement`.
+- **Label de triagem:** `ready-for-agent`, para a issue já especificada, que um agente pode pegar sem triagem adicional.
+
+**Da funcionalidade ao ticket**
+
+1. **Planejamento:** as decisões são fechadas com o usuário e registradas em `docs/` (LLD e, se houver termo novo, `GLOSSARY.md`).
+2. **Spec:** uma issue por funcionalidade, com o problema, a solução, as histórias de usuário, as decisões de implementação e de teste e o que fica fora de escopo.
+3. **Tickets:** sub-issues da spec. Cada ticket é uma fatia vertical, que atravessa banco, API, interface e testes e pode ser verificada sozinha. Tickets de preparação (ambiente, base de componentes) são a exceção e vêm primeiro.
+4. **Bloqueios:** as dependências entre tickets são a relação nativa do Linear ("blocked by"), e não texto na descrição.
+
+**Regras de escrita**
+
+- Specs e tickets são escritos em português, com o vocabulário do `GLOSSARY.md`.
+- Não cite caminhos de arquivo nem trechos de código: eles envelhecem rápido. Cite documentos e módulos pelo nome.
+- Todo ticket traz critérios de aceite verificáveis, e cada critério diz por onde é conferido (teste HTTP da API ou teste no navegador).
+- A spec e os tickets levam `ready-for-agent` e uma label de tipo.
+
+**Ao trabalhar em um ticket**
+
+- Pegue só tickets cujos bloqueios já foram concluídos.
+- Leia o ticket e a spec pai antes de começar. O contrato e as regras completas estão no LLD.
+- Use o identificador da issue no nome da branch, por exemplo `feature/lui-137-cadastro-e-verificacao`.
+- Mova a issue para "In Progress" ao começar. Ela só é concluída quando todos os critérios de aceite e a [definição de pronto](#definição-de-pronto) passam.
+- Não feche nem edite a spec pai ao concluir um ticket.
+- Se a implementação mudar uma decisão, atualize o LLD e o ticket na mesma tarefa.
+
 ## Convenções de Git
 
 - **Branch principal:** `main`. Nunca faça commit direto nela.

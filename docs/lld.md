@@ -20,12 +20,15 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 │   │   │   ├── ui/           # primitivos do design system (botões, campos, menu, diálogo)
 │   │   │   └── <domínio>/    # navigation, files, sharing, plans, auth
 │   │   ├── lib/api/          # cliente da API, usado só no servidor
-│   │   └── lib/session/      # leitura e renovação dos cookies de token
+│   │   ├── lib/session/      # leitura e renovação dos cookies de token
+│   │   ├── lib/dal/          # camada de acesso a dados: confere a Sessão na API
+│   │   └── proxy.ts          # renova os cookies e redireciona antes de cada rota
 │   └── api/                  # NestJS (API e worker, mesma imagem)
 │       ├── prisma/           # schema.prisma e migrações
 │       └── src/
 │           ├── modules/
-│           │   ├── auth/
+│           │   ├── users/    # dono da tabela users e de GET /me
+│           │   ├── auth/     # Sessões, tokens de e-mail, cadastro e login
 │           │   ├── items/
 │           │   ├── uploads/
 │           │   ├── sharing/
@@ -41,11 +44,14 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 | Decisão | Escolha |
 | --- | --- |
 | ORM e migrações | Prisma. As consultas recursivas de pastas usam SQL puro (`$queryRaw`). |
-| Validação de entrada | class-validator nos DTOs |
+| Validação de entrada | class-validator nos DTOs da API e zod nos formulários da web |
+| Formulários da web | Server Actions com `useActionState` |
+| Textos da interface | Só em português, escritos nos componentes, sem biblioteca de tradução. A web traduz o `code` do erro da API em mensagem. |
 | Documentação da API | OpenAPI gerado pelo NestJS (Swagger) |
 | Autenticação | `@nestjs/jwt` com um guard próprio, sem Passport. Argon2 para o hash da senha. |
 | Storage e fila | SDKs oficiais do Google Cloud (Storage e Cloud Tasks) |
-| Testes | Jest na API e Playwright para os fluxos de ponta a ponta |
+| Testes | Vitest na API e Playwright para os fluxos de ponta a ponta |
+| Lint e formatação | oxlint e Prettier na API, ESLint na web |
 
 **Camadas de cada módulo da API**
 
@@ -56,6 +62,10 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 Um módulo só chama outro pelo service público dele, nunca pelas tabelas. As integrações externas (storage, fila, e-mail, gateway) ficam atrás de interfaces em `infra/`, para que a troca de fornecedor fique restrita a um arquivo.
 
 **Chamadas do frontend:** o Next.js chama a API sempre no servidor (Server Components, Server Actions e Route Handlers). O navegador só fala direto com o Cloud Storage, para upload e download.
+
+**IP do usuário:** como as chamadas saem do servidor do Next.js, a API enxergaria o IP da web. A web repassa o IP do navegador no cabeçalho `X-Client-Ip`, junto com o segredo `INTERNAL_API_SECRET` no cabeçalho `X-Internal-Secret`. A API só usa o IP repassado quando o segredo confere. Sem ele, vale o IP da conexão.
+
+**Pacote compartilhado:** o `packages/shared` e o workspace na raiz ainda não existem. Enquanto o contrato for pequeno, cada projeto mantém os próprios tipos. A migração para o workspace exige mudar os volumes e os Dockerfiles do Compose.
 
 ## 2. Esquema do banco
 
@@ -82,9 +92,14 @@ erDiagram
 | `email` | `CITEXT` | Único |
 | `password_hash` | `TEXT` | Argon2id |
 | `email_verified_at` | `TIMESTAMPTZ` | Nulo até a verificação |
+| `terms_accepted_at` | `TIMESTAMPTZ` | Aceite dos termos e da política de privacidade, gravado no cadastro |
 | `plan_id` | `UUID` | Referência a `plans`. Começa no plano gratuito. |
 | `used_bytes` | `BIGINT` | Padrão 0. Restrição `used_bytes >= 0`. |
 | `created_at`, `updated_at` | `TIMESTAMPTZ` | |
+
+O e-mail é gravado sem os espaços das pontas. O `CITEXT` ignora maiúsculas, e não há outra normalização: `joao+x@gmail.com` e `joao@gmail.com` são usuários diferentes.
+
+`plan_id` e `used_bytes` não fazem parte da primeira migração. Eles são acrescentados, junto com a tabela `plans`, pela funcionalidade de cota.
 
 ### refresh_tokens
 
@@ -92,6 +107,7 @@ erDiagram
 | --- | --- | --- |
 | `id` | `UUID` | Chave primária |
 | `user_id` | `UUID` | Referência a `users`, com exclusão em cascata |
+| `session_id` | `UUID` | Agrupa a cadeia de tokens de uma mesma Sessão. Gerado no login. |
 | `token_hash` | `TEXT` | SHA-256 do token. Único. |
 | `expires_at` | `TIMESTAMPTZ` | 30 dias após a emissão |
 | `rotated_at` | `TIMESTAMPTZ` | Preenchido quando o token é trocado |
@@ -108,6 +124,8 @@ erDiagram
 | `token_hash` | `TEXT` | Único |
 | `expires_at` | `TIMESTAMPTZ` | 24 horas para verificação, 1 hora para redefinição |
 | `used_at` | `TIMESTAMPTZ` | Uso único |
+
+Emitir um token apaga os anteriores do mesmo usuário e do mesmo tipo. Só o link mais recente funciona.
 
 ### items
 
@@ -191,7 +209,7 @@ Como só o hash é guardado, a URL do link é exibida uma única vez, na criaç�
 
 | Coluna | Tipo | Observação |
 | --- | --- | --- |
-| `key` | `TEXT` | Chave primária, por exemplo `login:account:<id>` |
+| `key` | `TEXT` | Chave primária, por exemplo `login:email:<hash do e-mail>` ou `login:ip:<ip>` |
 | `window_start` | `TIMESTAMPTZ` | Início da janela |
 | `count` | `INTEGER` | Contador da janela |
 
@@ -216,6 +234,7 @@ Os contadores ficam no PostgreSQL porque as instâncias do Cloud Run não compar
 | HTTP | `code` | Quando |
 | --- | --- | --- |
 | 400 | `validation_error` | Entrada inválida |
+| 400 | `invalid_token` | Token de verificação ou de redefinição inexistente, expirado ou já usado |
 | 400 | `invalid_move` | Mover uma pasta para dentro dela mesma ou de uma descendente |
 | 400 | `max_depth_exceeded` | Mais de 50 níveis de pastas |
 | 401 | `unauthenticated` | Token ausente, inválido ou expirado |
@@ -233,16 +252,19 @@ Os contadores ficam no PostgreSQL porque as instâncias do Cloud Run não compar
 
 | Método e rota | Entrada | Saída |
 | --- | --- | --- |
-| `POST /auth/register` | `email`, `password` | 201. Envia o e-mail de verificação. |
-| `POST /auth/verify-email` | `token` | 204 |
+| `POST /auth/register` | `email`, `password` | 201, mesmo se o e-mail já existir. Envia um e-mail, que varia conforme o caso (seção 4.7). |
+| `POST /auth/verify-email` | `token` | 204. Não abre Sessão. |
+| `POST /auth/resend-verification` | `email` | 204, mesmo se o e-mail não existir ou já estiver verificado |
 | `POST /auth/login` | `email`, `password` | `accessToken`, `refreshToken`, `expiresIn` |
 | `POST /auth/refresh` | `refreshToken` | Novo par de tokens |
-| `POST /auth/logout` | `refreshToken` | 204 |
-| `POST /auth/logout-all` | | 204. Revoga todos os tokens de renovação. |
+| `POST /auth/logout` | `refreshToken` | 204, mesmo com token inválido ou expirado. Encerra a Sessão do token. |
+| `POST /auth/logout-all` | | 204. Encerra todas as Sessões do usuário. |
 | `POST /auth/forgot-password` | `email` | 204, mesmo se o e-mail não existir |
-| `POST /auth/reset-password` | `token`, `password` | 204. Revoga todos os tokens de renovação. |
+| `POST /auth/reset-password` | `token`, `password` | 204. Encerra todas as Sessões e não abre uma nova. |
 | `GET /me` | | `id`, `email`, `plan`, `usedBytes`, `quotaBytes`, `readOnly` |
-| `PATCH /me/password` | `currentPassword`, `newPassword` | 204. Revoga os outros tokens de renovação. |
+| `PATCH /me/password` | `currentPassword`, `newPassword` | 204. Encerra as outras Sessões. |
+
+`GET /me` pertence ao módulo `users`. Até a funcionalidade de cota existir, ele devolve só `id` e `email`. `POST /auth/logout-all` e `PATCH /me/password` dependem de uma tela de conta e não fazem parte da primeira entrega de autenticação.
 
 ### 3.3 Itens, lixeira e busca
 
@@ -374,8 +396,13 @@ stateDiagram-v2
 
 - **Token de acesso:** JWT com `sub` (id do usuário) e `exp`, assinado com RS256 e validado só pela assinatura.
 - **Token de renovação:** valor opaco de 256 bits, guardado só como hash. Cada renovação emite um novo par e marca o token antigo como trocado.
-- **Reuso de um token já trocado:** todos os tokens de renovação do usuário são revogados, por indicar possível roubo. Para não derrubar duas abas que renovam ao mesmo tempo, o token antigo continua aceito por 10 segundos depois da troca.
-- **Cookies no Next.js:** os dois tokens ficam em cookies `HttpOnly`, `Secure` e `SameSite=Lax`. Quando o token de acesso expira, o Next.js chama `/auth/refresh` no servidor e regrava os cookies.
+- **Sessão:** é o login de um usuário em um navegador. Todos os tokens de renovação emitidos a partir de um mesmo login carregam o mesmo `session_id`. Sair apaga todos os tokens da Sessão. Não há limite de Sessões simultâneas por usuário.
+- **Reuso de um token já trocado:** todas as Sessões do usuário são encerradas, por indicar possível roubo. Para não derrubar requisições que renovam ao mesmo tempo, o token antigo continua aceito por 10 segundos depois da troca.
+- **Renovações simultâneas:** dentro dos 10 segundos, cada chamada com o token antigo recebe um par novo e válido, na mesma Sessão. A cadeia bifurca, o último cookie gravado vence e os tokens que sobram expiram sozinhos.
+- **Cookies no Next.js:** os dois tokens ficam em cookies `HttpOnly`, `Secure` e `SameSite=Lax`. O `Secure` é desligado por `COOKIE_SECURE=false` no ambiente local, que usa HTTP.
+- **Renovação no `proxy.ts`:** antes de cada rota, o Proxy lê o `exp` do token de acesso, sem conferir a assinatura. Se ele expirou, o Proxy chama `/auth/refresh` e regrava os cookies. Se a renovação falha, ele apaga os cookies e redireciona para o login, com o aviso "Sua sessão expirou". O Proxy também manda para o login quem não tem Sessão e tira das telas `(auth)` quem tem.
+- **Verificação na web:** a web não tem a chave pública nem valida o JWT. Toda página e Server Action protegida passa pela camada de acesso a dados (`lib/dal`), que chama `GET /me`. Um `401` ali derruba a Sessão. O Proxy é só um filtro otimista, nunca a única barreira.
+- **Volta ao destino:** quem é barrado numa rota protegida volta para ela depois de entrar. O destino só aceita caminhos internos.
 
 ### 4.6 Upload em chunks
 
@@ -424,6 +451,45 @@ O navegador envia cada arquivo em chunks sequenciais para a sessão de upload re
 
 Esses dois pontos vêm do meu conhecimento da API do Cloud Storage e não foram testados neste projeto. Vale confirmá-los na documentação atual antes de implementar.
 
+### 4.7 Cadastro, verificação e senha
+
+**Cadastro**
+
+O cadastro nunca revela se um e-mail já tem usuário. A resposta é sempre 201, e o que muda é o e-mail enviado.
+
+| Situação do e-mail | Efeito | E-mail enviado |
+| --- | --- | --- |
+| Novo | Cria o usuário, não verificado | Verificação |
+| Já cadastrado, não verificado | Substitui a senha pela nova e invalida os links anteriores | Verificação |
+| Já cadastrado e verificado | Nenhum | "Você já tem conta", com os caminhos para entrar e redefinir a senha |
+
+- **O último cadastro vence:** sem isso, quem cadastrasse primeiro o e-mail de outra pessoa ficaria com a senha de um usuário que ela mesma verificaria depois.
+- **Risco residual aceito:** se um estranho se cadastrar depois do dono e o dono clicar no link do estranho, o usuário fica verificado com a senha do estranho. O usuário ainda está vazio, o dono não consegue entrar e usa "esqueci a senha", que troca a senha e encerra todas as Sessões.
+- **Aceite dos termos:** a tela mostra a frase de aceite com os links, sem checkbox, e o cadastro grava `terms_accepted_at`.
+
+**Verificação de e-mail**
+
+- Usuário não verificado não entra: o login responde `email_not_verified`. Não há Sessão limitada.
+- Verificar não abre Sessão. O usuário é levado ao login, com um aviso de sucesso.
+- O reenvio emite um novo token e invalida o anterior.
+
+**Redefinição de senha**
+
+- Funciona também para usuário não verificado.
+- Concluir a redefinição marca o e-mail como verificado, porque a pessoa provou que controla a caixa.
+- Encerra todas as Sessões, não abre uma nova e envia o e-mail "sua senha foi alterada".
+
+**Limite de tentativas**
+
+- A chave "por conta" é o hash do e-mail digitado, exista ou não o usuário. Assim o bloqueio não revela quem tem cadastro.
+- Estourado o limite, a resposta é `rate_limited` até a janela fechar, mesmo com a senha certa. Um terceiro consegue travar o login de alguém por 15 minutos; o MVP aceita esse risco.
+
+**Envio de e-mail**
+
+- A API envia por SMTP, atrás da interface de `infra/mail`, e responde sem esperar o envio terminar. Isso também evita que o tempo de resposta revele se o e-mail existe.
+- Uma falha de envio só é registrada em log. O usuário usa o reenvio.
+- Os e-mails são de texto simples com a marca, sem desenho no Figma.
+
 ## 5. Tarefas do worker
 
 O worker é a mesma imagem da API, publicada como um serviço separado do Cloud Run. Ele expõe endpoints HTTP internos, que só aceitam chamadas autenticadas (OIDC) do Cloud Tasks e do Cloud Scheduler. Todas as tarefas são idempotentes.
@@ -452,8 +518,9 @@ O worker é a mesma imagem da API, publicada como um serviço separado do Cloud 
 | Token de acesso | 15 minutos |
 | Token de renovação | 30 dias, com rotação a cada uso |
 | Token de acesso a link com senha | 15 minutos |
-| Senha | Mínimo de 10 caracteres, com hash Argon2id |
-| Tentativas de login | 5 por conta e 20 por IP a cada 15 minutos |
+| Senha | De 10 a 128 caracteres, sem regra de composição, com hash Argon2id |
+| Tentativas de login | 5 por e-mail e 20 por IP a cada 15 minutos |
+| Cadastro, reenvio de verificação e "esqueci a senha" | 3 por e-mail e 10 por IP a cada hora |
 | Tentativas de senha de link público | 10 por link a cada 15 minutos |
 | Limite geral da API | 300 requisições por minuto por usuário |
 | Tamanho máximo por arquivo | 5 GB |
@@ -483,16 +550,24 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 | `TRASH_RETENTION_DAYS`, `PENDING_UPLOAD_TTL_HOURS` | api | Padrões de 30 dias e 24 horas |
 | `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | api | Padrões de 15 minutos e 30 dias |
 | `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | api | Credenciais do gateway (segredo) |
-| `MAIL_API_KEY`, `MAIL_FROM` | api | Serviço de e-mail (segredo) |
+| `SMTP_URL`, `MAIL_FROM` | api | Servidor SMTP do serviço de e-mail (segredo) e remetente. No desenvolvimento, aponta para o `mailpit`. |
 | `WEB_ORIGIN` | api | Origem do frontend, para CORS e links de e-mail |
+| `INTERNAL_API_SECRET` | api e web | Segredo que autoriza a web a repassar o IP do usuário (segredo) |
 | `API_URL` | web | Endereço interno da API |
 | `COOKIE_DOMAIN` | web | Domínio dos cookies de token |
+| `COOKIE_SECURE` | web | Padrão `true`. `false` só no desenvolvimento, que usa HTTP. |
+
+No ambiente local, as chaves do JWT são geradas por um script na primeira subida e gravadas no `.env`, que fica fora do Git.
 
 Os valores marcados como segredo vêm do Secret Manager e não ficam em arquivos versionados.
 
 ## Questões em aberto
 
 - [ ] Exclusão de conta pelo próprio usuário: está fora do MVP, mas a LGPD dá ao titular o direito de pedir a eliminação dos dados. Sem a função, o pedido é atendido manualmente.
+- [ ] Texto dos Termos e da Política de Privacidade: depende de validação jurídica. Até lá, os links do cadastro apontam para páginas provisórias.
+- [ ] Troca de e-mail pelo próprio usuário e lista de Sessões ativas: fora do MVP.
+- [ ] Limpeza de usuários nunca verificados: sem rotina por enquanto. Eles não bloqueiam o cadastro do dono do e-mail.
+- [ ] Captcha no cadastro e checagem da senha contra listas de senhas vazadas: fora do MVP.
 - [ ] Download de pasta inteira em ZIP: fica fora do MVP, e o usuário baixa arquivo por arquivo.
 - [ ] Operações em lote (mover ou excluir vários itens): o frontend faz uma chamada por item.
 - [ ] Direito de arrependimento de 7 dias em compras online: precisa de validação jurídica e pode exigir reembolso.
