@@ -15,6 +15,7 @@ interface MailpitAddress {
 }
 
 interface MailpitSearchResult {
+  /** Do mais novo para o mais antigo. */
   messages: { ID: string }[];
 }
 
@@ -26,6 +27,17 @@ interface MailpitMessage {
   HTML: string;
 }
 
+interface WaitForMailOptions {
+  /**
+   * Quantos e-mails o endereço já tem de ter recebido, contando desde o começo
+   * do teste. O padrão é 1. Um teste que provoca um segundo envio para o mesmo
+   * destinatário (reenvio, redefinição de senha) espera com `count: 2`, para
+   * não ler o primeiro e-mail enquanto o segundo ainda não chegou.
+   */
+  count?: number;
+  timeoutMs?: number;
+}
+
 /**
  * Endereço que nenhum outro teste usa. Os testes acham os próprios e-mails pelo
  * destinatário, sem apagar a caixa do Mailpit, que também serve ao
@@ -35,46 +47,43 @@ export function uniqueEmail(): string {
   return `teste-${randomUUID()}@example.com`;
 }
 
-/** E-mails enviados para o endereço, do mais novo para o mais antigo. */
-export async function findMailsTo(address: string): Promise<CapturedMail[]> {
-  const query = encodeURIComponent(`to:"${address}"`);
-  const { messages } = await getJson<MailpitSearchResult>(
-    `/api/v1/search?query=${query}`,
-  );
-
-  return Promise.all(
-    messages.map(async ({ ID }) => {
-      const message = await getJson<MailpitMessage>(`/api/v1/message/${ID}`);
-      return {
-        from: message.From.Address,
-        to: message.To.map((recipient) => recipient.Address),
-        subject: message.Subject,
-        text: message.Text,
-        html: message.HTML,
-      };
-    }),
-  );
-}
-
 /**
- * Espera o e-mail mais novo para o endereço. A espera existe porque a API pode
- * responder antes de o envio terminar.
+ * Espera o endereço ter recebido `count` e-mails e devolve o mais novo deles. A
+ * espera existe porque a API pode responder antes de o envio terminar.
  */
 export async function waitForMailTo(
   address: string,
-  timeoutMs = 5000,
+  { count = 1, timeoutMs = 5000 }: WaitForMailOptions = {},
 ): Promise<CapturedMail> {
+  const query = encodeURIComponent(`to:"${address}"`);
   const deadline = Date.now() + timeoutMs;
+
   for (;;) {
-    const [newest] = await findMailsTo(address);
-    if (newest) {
-      return newest;
+    const { messages } = await getJson<MailpitSearchResult>(
+      `/api/v1/search?query=${query}`,
+    );
+    if (messages.length >= count) {
+      // Só o e-mail devolvido tem o corpo buscado.
+      return readMail(messages[0].ID);
     }
     if (Date.now() > deadline) {
-      throw new Error(`Nenhum e-mail para ${address} chegou ao Mailpit.`);
+      throw new Error(
+        `O Mailpit recebeu ${messages.length} e-mail(s) para ${address}, e o teste esperava ${count}.`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
+
+async function readMail(id: string): Promise<CapturedMail> {
+  const message = await getJson<MailpitMessage>(`/api/v1/message/${id}`);
+  return {
+    from: message.From.Address,
+    to: message.To.map((recipient) => recipient.Address),
+    subject: message.Subject,
+    text: message.Text,
+    html: message.HTML,
+  };
 }
 
 async function getJson<T>(path: string): Promise<T> {

@@ -13,7 +13,14 @@ export class SmtpMailSender implements MailSender, OnModuleDestroy {
     @Inject(mailConfig.KEY)
     private readonly config: ConfigType<typeof mailConfig>,
   ) {
-    this.transporter = createTransport(config.smtpUrl);
+    // Os prazos padrão do nodemailer são de minutos (2 para conectar, 10 de
+    // inatividade). Um servidor travado seguraria o envio por todo esse tempo.
+    this.transporter = createTransport({
+      url: config.smtpUrl,
+      connectionTimeout: config.timeoutMs,
+      greetingTimeout: config.timeoutMs,
+      socketTimeout: config.timeoutMs,
+    });
   }
 
   async send(message: MailMessage): Promise<void> {
