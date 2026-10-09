@@ -35,6 +35,7 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 │           │   ├── quota/
 │           │   ├── billing/
 │           │   └── worker/   # endpoints internos das tarefas
+│           ├── config/       # módulo de config: schema e leitura das variáveis de ambiente
 │           ├── infra/        # storage, tasks, mail, payment gateway
 │           └── common/       # guards, filtros de erro, rate limit
 └── packages/
@@ -45,21 +46,17 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 | --- | --- |
 | ORM e migrações | Prisma. As consultas recursivas de pastas usam SQL puro (`$queryRaw`). |
 | Validação de entrada | class-validator nos DTOs da API e zod nos formulários da web |
-| Formulários da web | Server Actions com `useActionState` |
-| Textos da interface | Só em português, escritos nos componentes, sem biblioteca de tradução. A web traduz o `code` do erro da API em mensagem. |
+| Configuração da API | `@nestjs/config`, com um schema do Joi que valida as variáveis de ambiente na subida |
+| Textos da interface | Só em português, sem biblioteca de tradução |
 | Documentação da API | OpenAPI gerado pelo NestJS (Swagger) |
 | Autenticação | `@nestjs/jwt` com um guard próprio, sem Passport. Argon2 para o hash da senha. |
 | Storage e fila | SDKs oficiais do Google Cloud (Storage e Cloud Tasks) |
 | Testes | Vitest na API e Playwright para os fluxos de ponta a ponta |
 | Lint e formatação | oxlint e Prettier na API, ESLint na web |
 
-**Camadas de cada módulo da API**
+**Práticas de código da API:** as camadas de cada módulo, a direção das dependências, o tratamento de erros, os nomes de arquivos, os níveis de teste e o módulo de config estão no `AGENTS.md` do projeto `api`, e não neste documento.
 
-- **Controller:** rotas HTTP, DTOs e validação.
-- **Service:** regras de negócio e transações.
-- **Repository:** acesso ao banco.
-
-Um módulo só chama outro pelo service público dele, nunca pelas tabelas. As integrações externas (storage, fila, e-mail, gateway) ficam atrás de interfaces em `infra/`, para que a troca de fornecedor fique restrita a um arquivo.
+**Práticas de código da web:** a preferência por Server Components, as regras de cache, o acesso a dados e os formulários estão no `AGENTS.md` do projeto `web`, e não neste documento.
 
 **Chamadas do frontend:** o Next.js chama a API sempre no servidor (Server Components, Server Actions e Route Handlers). O navegador só fala direto com o Cloud Storage, para upload e download.
 
@@ -541,6 +538,7 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 
 | Variável | Projeto | Conteúdo |
 | --- | --- | --- |
+| `PORT` | api | Porta HTTP, com padrão 3000. O Cloud Run a define em produção. |
 | `DATABASE_URL` | api | Conexão com o Cloud SQL (segredo) |
 | `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | api | Par de chaves RS256 (segredo) |
 | `GCS_BUCKET` | api | Nome do bucket privado |

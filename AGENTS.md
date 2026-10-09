@@ -6,8 +6,20 @@ Em `docs/` estão os documentos que definem o produto, a arquitetura e os detalh
 
 1. `docs/product-brief.md`: o quê e para quem. Escopo do MVP, o que fica fora, planos e métricas.
 2. `docs/hld.md`: High-level design, documento de arquitetura de alto nível. Aqui ficam as decisões de arquitetura, os fluxos principais e a visão geral do sistema.
-3. `docs/lld.md`: Low-level design, documento de arquitetura de baixo nível com detalhes de implementação. Aqui ficam os esquemas de banco, contratos de API, estados, regras de cota, tarefas do worker e upload em chunks.
+3. `docs/lld.md`: Low-level design, documento de arquitetura de baixo nível. Aqui ficam a estrutura de pastas, as bibliotecas escolhidas, os esquemas de banco, os contratos de API, os estados, as regras de cota, as tarefas do worker, o upload em chunks e as variáveis de ambiente.
 4. `docs/design-system.md`: linguagem visual da interface. Aqui ficam os tokens de cor, tipografia, espaçamento, raio e sombra, os estados de interação, os componentes, o comportamento responsivo e o fluxo de trabalho com o Figma.
+
+Cada projeto tem o próprio `AGENTS.md`, com os comandos, as particularidades da stack e as práticas de código dele:
+
+- `apps/api/AGENTS.md`: API em NestJS.
+- `apps/web/AGENTS.md`: frontend em Next.js.
+
+**Onde cada informação mora**
+
+- **O que o sistema faz** fica em `docs/`: escopo, arquitetura, esquema, contrato, regras de negócio e configuração.
+- **Como o código é escrito** fica no `AGENTS.md` do projeto: camadas, regras de import, tratamento de erros, nomes de arquivos, níveis de teste e comandos.
+- **Nunca nos dois.** Uma informação tem um dono só, e o outro arquivo aponta para ele pelo nome do documento e da seção, sem repetir o conteúdo.
+- **Este arquivo** só traz o que vale para todos os projetos.
 
 ## Execução no Docker
 
@@ -67,11 +79,11 @@ A regra vale para variáveis de ambiente, arquivos de configuração e código q
 
 ## Princípios de trabalho
 
-- **Responsabilidade única:** cada módulo, service e função tem uma responsabilidade clara. Reavalie isso a cada passo. Quando um módulo começa a criar ou alterar entidades de outro domínio, extraia a lógica para o módulo certo na hora, em vez de deixar para uma tarefa futura. Um módulo só chama outro pelo service público dele.
+- **Responsabilidade única:** cada módulo e cada função tem uma responsabilidade clara. Reavalie isso a cada passo. Quando um módulo começa a criar ou alterar entidades de outro domínio, extraia a lógica para o módulo certo na hora, em vez de deixar para uma tarefa futura.
 - **Tipagem:** TypeScript estrito em todas as camadas.
 - **Testes:** pirâmide de testes em todos os níveis (unitários, de integração e de ponta a ponta).
-- **Qualidade de código:** ESLint e Prettier para manter o estilo consistente.
-- **Documentação:** arquitetura, configuração e solução de problemas ficam em `docs/`.
+- **Qualidade de código:** lint e formatação automáticos, com as ferramentas de cada projeto.
+- **Documentação:** cada informação fica no documento dono dela, como descrito em [Documentos](#documentos).
 
 ## Design e Figma
 
@@ -84,14 +96,14 @@ O Figma é a ferramenta de design do projeto, acessada pelo servidor MCP do plug
 Uma mudança no código só está concluída quando **todos** os itens abaixo passam:
 
 1. Durante o desenvolvimento, rode só os testes ligados ao código alterado.
-2. Antes de terminar, rode a suíte completa de testes: `pnpm test`.
+2. Antes de terminar, rode todas as suítes de teste do projeto. Elas estão listadas no `AGENTS.md` dele.
 3. O TypeScript compila sem erros: `pnpm exec tsc --noEmit` termina com código 0. Erros de compilação nunca ficam como dívida para tarefas futuras.
 4. O lint passa: `pnpm lint`.
 5. Em mudanças de interface, a validação visual descrita em `docs/design-system.md` foi feita.
 
 Se algum item falhar, a tarefa não está pronta. Corrija a causa antes de declarar a conclusão.
 
-Os comandos acima são os planejados para o monorepo com pnpm. Confira os scripts reais no `package.json` de cada projeto antes de rodá-los.
+Os comandos de teste, de lint e de formatação de cada projeto estão no `AGENTS.md` dele.
 
 Rode todos eles dentro do contêiner do projeto, como descrito em [Execução no Docker](#execução-no-docker).
 
@@ -106,7 +118,7 @@ O Linear é o gerenciador de issues do projeto, acessado pelo servidor MCP `line
 
 **Da funcionalidade ao ticket**
 
-1. **Planejamento:** as decisões são fechadas com o usuário e registradas em `docs/` (LLD e, se houver termo novo, `GLOSSARY.md`).
+1. **Planejamento:** as decisões são fechadas com o usuário e registradas no documento dono delas: as de produto em `docs/` (LLD e, se houver termo novo, `GLOSSARY.md`), e as de prática de código no `AGENTS.md` do projeto.
 2. **Spec:** uma issue por funcionalidade, com o problema, a solução, as histórias de usuário, as decisões de implementação e de teste e o que fica fora de escopo.
 3. **Tickets:** sub-issues da spec. Cada ticket é uma fatia vertical, que atravessa banco, API, interface e testes e pode ser verificada sozinha. Tickets de preparação (ambiente, base de componentes) são a exceção e vêm primeiro.
 4. **Bloqueios:** as dependências entre tickets são a relação nativa do Linear ("blocked by"), e não texto na descrição.
@@ -125,7 +137,7 @@ O Linear é o gerenciador de issues do projeto, acessado pelo servidor MCP `line
 - Use o identificador da issue no nome da branch, por exemplo `feature/lui-137-cadastro-e-verificacao`.
 - Mova a issue para "In Progress" ao começar. Ela só é concluída quando todos os critérios de aceite e a [definição de pronto](#definição-de-pronto) passam.
 - Não feche nem edite a spec pai ao concluir um ticket.
-- Se a implementação mudar uma decisão, atualize o LLD e o ticket na mesma tarefa.
+- Se a implementação mudar uma decisão, atualize o documento dono dela (o LLD ou o `AGENTS.md` do projeto) e o ticket na mesma tarefa.
 
 ## Convenções de Git
 
