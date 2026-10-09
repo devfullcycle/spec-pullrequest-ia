@@ -1,4 +1,6 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { ClientIp } from '../../common/client-ip/client-ip.decorator.js';
+import { ClientIpGuard } from '../../common/client-ip/client-ip.guard.js';
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { LogoutDto } from './dto/logout.dto.js';
@@ -12,6 +14,7 @@ import { RegistrationService } from './registration.service.js';
 import { SessionsService, type TokenPair } from './sessions.service.js';
 
 @Controller('auth')
+@UseGuards(ClientIpGuard)
 export class AuthController {
   constructor(
     private readonly registration: RegistrationService,
@@ -21,8 +24,11 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(201)
-  async register(@Body() body: RegisterDto): Promise<void> {
-    await this.registration.register(body.email, body.password);
+  async register(
+    @Body() body: RegisterDto,
+    @ClientIp() clientIp: string,
+  ): Promise<void> {
+    await this.registration.register(body.email, body.password, clientIp);
   }
 
   @Post('verify-email')
@@ -33,14 +39,20 @@ export class AuthController {
 
   @Post('resend-verification')
   @HttpCode(204)
-  async resendVerification(@Body() body: ResendVerificationDto): Promise<void> {
-    await this.registration.resendVerification(body.email);
+  async resendVerification(
+    @Body() body: ResendVerificationDto,
+    @ClientIp() clientIp: string,
+  ): Promise<void> {
+    await this.registration.resendVerification(body.email, clientIp);
   }
 
   @Post('login')
   @HttpCode(200)
-  login(@Body() body: LoginDto): Promise<TokenPair> {
-    return this.sessions.login(body.email, body.password);
+  login(
+    @Body() body: LoginDto,
+    @ClientIp() clientIp: string,
+  ): Promise<TokenPair> {
+    return this.sessions.login(body.email, body.password, clientIp);
   }
 
   @Post('refresh')
@@ -57,8 +69,11 @@ export class AuthController {
 
   @Post('forgot-password')
   @HttpCode(204)
-  async forgotPassword(@Body() body: ForgotPasswordDto): Promise<void> {
-    await this.passwordRecovery.requestReset(body.email);
+  async forgotPassword(
+    @Body() body: ForgotPasswordDto,
+    @ClientIp() clientIp: string,
+  ): Promise<void> {
+    await this.passwordRecovery.requestReset(body.email, clientIp);
   }
 
   @Post('reset-password')

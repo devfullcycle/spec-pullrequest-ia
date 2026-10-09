@@ -14,6 +14,8 @@ services:
       API_URL: http://api:3000
       # O ambiente local usa HTTP, e o navegador descartaria um cookie `Secure`.
       COOKIE_SECURE: "false"
+      # Autoriza a web a repassar à API o IP do navegador. É o mesmo valor do apps/api/.env.example.
+      INTERNAL_API_SECRET: segredo-interno-so-do-ambiente-local
     healthcheck:
       # O arquivo é criado quando a instalação das dependências termina.
       test: ["CMD", "test", "-f", "/tmp/web-ready"]

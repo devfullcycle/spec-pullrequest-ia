@@ -5,6 +5,7 @@ import { AccessTokensService } from '../../common/auth/access-tokens.service.js'
 import { UnauthenticatedError } from '../../common/auth/unauthenticated.error.js';
 import { authConfig } from '../../config/auth.config.js';
 import { UsersService } from '../users/users.service.js';
+import { AuthAttemptsService } from './auth-attempts.service.js';
 import { EmailNotVerifiedError } from './errors/email-not-verified.error.js';
 import { InvalidCredentialsError } from './errors/invalid-credentials.error.js';
 import { generateOpaqueToken, hashOpaqueToken } from './opaque-token.js';
@@ -26,12 +27,21 @@ export class SessionsService {
     private readonly passwords: PasswordService,
     private readonly accessTokens: AccessTokensService,
     private readonly refreshTokens: RefreshTokensRepository,
+    private readonly attempts: AuthAttemptsService,
     @Inject(authConfig.KEY)
     private readonly config: ConfigType<typeof authConfig>,
   ) {}
 
-  /** Abre uma Sessão. Não há limite de Sessões por Usuário. */
-  async login(email: string, password: string): Promise<TokenPair> {
+  /**
+   * Abre uma Sessão. Não há limite de Sessões por Usuário. Com o limite de
+   * tentativas estourado, nem a senha certa entra até a janela fechar.
+   */
+  async login(
+    email: string,
+    password: string,
+    clientIp: string,
+  ): Promise<TokenPair> {
+    await this.attempts.login(email, clientIp);
     const user = await this.users.findByEmail(email);
     // A senha é conferida mesmo sem Usuário, para o tempo de resposta não
     // revelar se o e-mail existe.

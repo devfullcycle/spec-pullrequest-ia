@@ -61,7 +61,9 @@ O código fica num monorepo com pnpm workspaces, com dois projetos de deploy ind
 
 **Chamadas do frontend:** o Next.js chama a API sempre no servidor (Server Components, Server Actions e Route Handlers). O navegador só fala direto com o Cloud Storage, para upload e download.
 
-**IP do usuário:** como as chamadas saem do servidor do Next.js, a API enxergaria o IP da web. A web repassa o IP do navegador no cabeçalho `X-Client-Ip`, junto com o segredo `INTERNAL_API_SECRET` no cabeçalho `X-Internal-Secret`. A API só usa o IP repassado quando o segredo confere. Sem ele, vale o IP da conexão.
+**IP do usuário:** como as chamadas saem do servidor do Next.js, a API enxergaria o IP da web. A web repassa o IP do navegador no cabeçalho `X-Client-Ip`, junto com o segredo `INTERNAL_API_SECRET` no cabeçalho `X-Internal-Secret`. A API só usa o IP repassado quando o segredo confere. Sem ele, ou com um IP repassado que não é um endereço válido, vale o IP da conexão. Um segredo que chega e não confere vai para o log da API, no máximo uma vez por minuto: é o sinal de que a web e a API estão com valores diferentes.
+
+O IP que a web repassa é o último endereço do `X-Forwarded-For` da requisição do navegador, que é o que o Cloud Run acrescenta. Os endereços anteriores vêm do próprio navegador e não são confiáveis. Se um balanceador entrar na frente da web, o endereço certo deixa de ser o último, e esta regra muda junto.
 
 **Pacote compartilhado:** o `packages/shared` e o workspace na raiz ainda não existem. Enquanto o contrato for pequeno, cada projeto mantém os próprios tipos. A migração para o workspace exige mudar os volumes e os Dockerfiles do Compose.
 
@@ -212,6 +214,8 @@ Como só o hash é guardado, a URL do link é exibida uma única vez, na criaç�
 | `key` | `TEXT` | Chave primária, por exemplo `login:email:<hash do e-mail>` ou `login:ip:<ip>` |
 | `window_start` | `TIMESTAMPTZ` | Início da janela |
 | `count` | `INTEGER` | Contador da janela |
+
+Cada chave tem uma linha só, com a janela atual. A janela abre na primeira tentativa e dura o tempo configurado, sem se esticar com as tentativas seguintes. A primeira tentativa depois de ela fechar abre outra, com o contador em 1. O relógio da janela é o do banco, que é um só para todas as instâncias da API.
 
 Os contadores ficam no PostgreSQL porque as instâncias do Cloud Run não compartilham memória. Uma troca futura por Redis fica restrita ao módulo `common/rate-limit`.
 
@@ -529,7 +533,11 @@ O cadastro nunca revela se um e-mail já tem usuário. A resposta é sempre 201,
 
 **Limite de tentativas**
 
-- A chave "por conta" é o hash do e-mail digitado, exista ou não o usuário. Assim o bloqueio não revela quem tem cadastro.
+- Vale para o login, o cadastro, o reenvio de verificação e o "esqueci a senha", com os tetos e as janelas da seção 6. Cada rota tem os próprios contadores, um por e-mail e um por IP: o cadastro, o reenvio e o "esqueci a senha" dividem os tetos, e não o contador.
+- A chave "por conta" é o hash do e-mail digitado, exista ou não o usuário. Assim o bloqueio não revela quem tem cadastro. As maiúsculas e os espaços das pontas não contam, para o mesmo endereço não ganhar um contador por grafia.
+- Toda tentativa conta, inclusive o login com a senha certa. A contagem vem antes de qualquer consulta ao usuário, e a resposta bloqueada é a mesma exista ele ou não. Uma entrada que a validação recusa não é contada.
+- A tentativa é contada nas duas chaves mesmo quando uma delas já estourou.
+- O IP é o do navegador, repassado pela web (seção 1). As grafias do mesmo endereço contam juntas: um IPv6 abreviado ou por extenso, e o IPv4 embrulhado em IPv6.
 - Estourado o limite, a resposta é `rate_limited` até a janela fechar, mesmo com a senha certa. Um terceiro consegue travar o login de alguém por 15 minutos; o MVP aceita esse risco.
 
 **Envio de e-mail**
@@ -579,7 +587,7 @@ O worker é a mesma imagem da API, publicada como um serviço separado do Cloud 
 | Tolerância de pagamento | 7 dias |
 | Profundidade de pastas | 50 níveis |
 
-A retenção da lixeira, o prazo de upload pendente, a validade dos tokens e a tolerância ao reuso são lidos de variáveis de ambiente. Os valores da tabela são os padrões de produção, e o ambiente local pode reduzi-los para testar.
+A retenção da lixeira, o prazo de upload pendente, a validade dos tokens, a tolerância ao reuso e os tetos e as janelas das tentativas de login e dos pedidos de e-mail são lidos de variáveis de ambiente. Os valores da tabela são os padrões de produção, e o ambiente local pode reduzi-los para testar.
 
 **CORS**
 
@@ -608,14 +616,16 @@ A retenção da lixeira, o prazo de upload pendente, a validade dos tokens e a t
 | `SMTP_TIMEOUT_MS` | api | Quanto esperar o servidor SMTP para resolver o nome, conectar e saudar, em milissegundos. Padrão de 10000. |
 | `SMTP_IDLE_TIMEOUT_MS` | api | Quanto uma conexão SMTP aberta pode ficar sem tráfego, durante um envio ou entre um envio e outro, em milissegundos. Padrão de 60000. |
 | `WEB_ORIGIN` | api | Origem do frontend, para CORS e links de e-mail: esquema, host e porta, sem caminho nem barra no fim. No desenvolvimento, é o endereço que a pessoa abre no navegador (`http://localhost:3000`). |
-| `INTERNAL_API_SECRET` | api e web | Segredo que autoriza a web a repassar o IP do usuário (segredo) |
+| `INTERNAL_API_SECRET` | api e web | Segredo que autoriza a web a repassar o IP do usuário (segredo). Tem pelo menos 32 caracteres, e o valor é o mesmo nos dois projetos. |
+| `LOGIN_RATE_LIMIT_PER_EMAIL`, `LOGIN_RATE_LIMIT_PER_IP`, `LOGIN_RATE_LIMIT_WINDOW_SECONDS` | api | Tentativas de login por e-mail e por IP, e a janela, em segundos. Padrões de 5, 20 e 900 (15 minutos). |
+| `EMAIL_REQUEST_RATE_LIMIT_PER_EMAIL`, `EMAIL_REQUEST_RATE_LIMIT_PER_IP`, `EMAIL_REQUEST_RATE_LIMIT_WINDOW_SECONDS` | api | Cadastros, reenvios de verificação e pedidos de "esqueci a senha" por e-mail e por IP, e a janela, em segundos. Padrões de 3, 10 e 3600 (1 hora). |
 | `API_URL` | web | Endereço interno da API |
 | `COOKIE_DOMAIN` | web | Domínio dos cookies de token |
 | `COOKIE_SECURE` | web | Padrão `true`. `false` só no desenvolvimento, que usa HTTP. |
 
-**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM`, `SMTP_TIMEOUT_MS`, `SMTP_IDLE_TIMEOUT_MS`, `DATABASE_CONNECT_TIMEOUT_MS`, `WEB_ORIGIN`, `EMAIL_VERIFICATION_TTL_SECONDS`, `PASSWORD_RESET_TTL_SECONDS`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS` e `REFRESH_TOKEN_REUSE_GRACE_SECONDS`, e todas, menos `PORT`, os quatro prazos, as quatro validades e a janela de tolerância, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, que não pode ser lida, ou uma pública que não é o par da privada, impede a subida. O `MAIL_FROM` tem de trazer um endereço de e-mail, sozinho ou como `Nome <endereço>`. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
+**Validação na subida:** a API valida as próprias variáveis ao iniciar e não sobe se alguma obrigatória faltar ou vier inválida. Hoje o schema cobre `PORT`, `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `SMTP_URL`, `MAIL_FROM`, `SMTP_TIMEOUT_MS`, `SMTP_IDLE_TIMEOUT_MS`, `DATABASE_CONNECT_TIMEOUT_MS`, `WEB_ORIGIN`, `EMAIL_VERIFICATION_TTL_SECONDS`, `PASSWORD_RESET_TTL_SECONDS`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_REUSE_GRACE_SECONDS`, `INTERNAL_API_SECRET` e as seis variáveis do limite de tentativas, e todas, menos `PORT`, os quatro prazos, as quatro validades, a janela de tolerância e as seis do limite de tentativas, são obrigatórias. As chaves do JWT são lidas de verdade na validação: uma chave que não é RSA, que não pode ser lida, ou uma pública que não é o par da privada, impede a subida. O `MAIL_FROM` tem de trazer um endereço de e-mail, sozinho ou como `Nome <endereço>`. Cada uma das outras variáveis da tabela entra no schema e no `.env.example` junto com a funcionalidade que a usa.
 
-**Ambiente local:** as variáveis da API ficam em `apps/api/.env`, fora do Git. Na primeira subida, o contêiner da API cria esse arquivo como cópia do `apps/api/.env.example`, que é versionado e funciona sem alterações, e um script gera as chaves do JWT e as grava nele. Quando o `.env.example` ganha uma variável, o mesmo script a acrescenta ao `.env` que já existe, sem trocar nenhum valor. Os hosts são sempre os nomes dos serviços do Compose. A `API_URL` e o `COOKIE_SECURE=false` da web são definidos no próprio `compose.dev.yaml`, sem arquivo `.env`.
+**Ambiente local:** as variáveis da API ficam em `apps/api/.env`, fora do Git. Na primeira subida, o contêiner da API cria esse arquivo como cópia do `apps/api/.env.example`, que é versionado e funciona sem alterações, e um script gera as chaves do JWT e as grava nele. Quando o `.env.example` ganha uma variável, o mesmo script a acrescenta ao `.env` que já existe, sem trocar nenhum valor. Os hosts são sempre os nomes dos serviços do Compose. A `API_URL`, o `COOKIE_SECURE=false` e o `INTERNAL_API_SECRET` da web são definidos no próprio `compose.dev.yaml`, sem arquivo `.env`. O `.env.example` da API traz o mesmo segredo e sobe os tetos por IP, porque no ambiente local o navegador da pessoa e os testes no navegador saem todos do mesmo IP.
 
 **Banco de testes:** os testes da API usam um banco separado no mesmo PostgreSQL, com o nome do banco de `DATABASE_URL` mais o sufixo `_test`. Ele não tem variável própria.
 

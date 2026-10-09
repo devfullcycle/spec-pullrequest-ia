@@ -18,6 +18,13 @@ export interface Env {
   ACCESS_TOKEN_TTL_SECONDS: number;
   REFRESH_TOKEN_TTL_SECONDS: number;
   REFRESH_TOKEN_REUSE_GRACE_SECONDS: number;
+  INTERNAL_API_SECRET: string;
+  LOGIN_RATE_LIMIT_PER_EMAIL: number;
+  LOGIN_RATE_LIMIT_PER_IP: number;
+  LOGIN_RATE_LIMIT_WINDOW_SECONDS: number;
+  EMAIL_REQUEST_RATE_LIMIT_PER_EMAIL: number;
+  EMAIL_REQUEST_RATE_LIMIT_PER_IP: number;
+  EMAIL_REQUEST_RATE_LIMIT_WINDOW_SECONDS: number;
 }
 
 /**
@@ -136,6 +143,24 @@ export const envSchema = Joi.object<Env>({
     .default(30 * 24 * 60 * 60),
   // Zero desliga a tolerância: todo reuso de um token trocado é recusado.
   REFRESH_TOKEN_REUSE_GRACE_SECONDS: Joi.number().integer().min(0).default(10),
+
+  // Curto demais, o segredo seria adivinhado, e qualquer um escolheria o
+  // próprio IP no limite de tentativas.
+  INTERNAL_API_SECRET: Joi.string().min(32).required(),
+
+  LOGIN_RATE_LIMIT_PER_EMAIL: Joi.number().integer().min(1).default(5),
+  LOGIN_RATE_LIMIT_PER_IP: Joi.number().integer().min(1).default(20),
+  LOGIN_RATE_LIMIT_WINDOW_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .default(15 * 60),
+  // Cadastro, reenvio de verificação e "esqueci a senha".
+  EMAIL_REQUEST_RATE_LIMIT_PER_EMAIL: Joi.number().integer().min(1).default(3),
+  EMAIL_REQUEST_RATE_LIMIT_PER_IP: Joi.number().integer().min(1).default(10),
+  EMAIL_REQUEST_RATE_LIMIT_WINDOW_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .default(60 * 60),
 })
   .custom(matchingJwtKeys)
   .messages({

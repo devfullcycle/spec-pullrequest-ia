@@ -100,6 +100,7 @@ A exceção conhecida é o upload: o navegador envia os chunks direto ao Cloud S
 ## Acesso a dados
 
 - **A API é chamada só no servidor.** Server Components, Server Actions e Route Handlers usam o cliente de `lib/api`. Não existe `fetch` para a API em componente de cliente nem variável `NEXT_PUBLIC_` com o endereço dela.
+- **O cliente de `lib/api` repassa o IP do navegador.** Toda chamada leva o IP e o segredo `INTERNAL_API_SECRET`, que a API exige para aceitá-lo (seção 1 do `docs/lld.md`). Por ler os cabeçalhos da requisição, o cliente só roda onde há uma requisição em curso, e nunca na pré-renderização.
 - **Toda leitura protegida passa por `lib/dal`.** É ela que confere a Sessão na API. O Proxy só faz um filtro otimista e nunca substitui essa conferência.
 - **Toda Server Action confere a Sessão de novo.** Uma Server Action é um endpoint público. Esconder o botão na interface não protege nada. A exceção é a de sair, que tem de funcionar com a Sessão já expirada e só age sobre os cookies de quem a chamou.
 - **Página protegida:** lê o Usuário com `getCurrentUser()`, de `lib/dal/user.ts`, dentro de `<Suspense>`. Sem Sessão, a função já leva à tela de entrar.
