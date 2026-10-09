@@ -1,6 +1,6 @@
 ## Estado atual
 
-A fundação está pronta: módulo de config (`src/config/`), banco com Prisma (`prisma/` e `src/infra/database/`), envio de e-mail (`src/infra/mail/`), filtro de erros e validação de entrada (`src/common/`) e a base de testes (`test/support/`). Dos módulos de domínio (`src/modules/`), existem o `users`, ainda sem rota, e o `auth`, com o cadastro, a verificação de e-mail e o reenvio. Login, Sessão e recuperação de senha **ainda não existem**. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
+A fundação está pronta: módulo de config (`src/config/`), banco com Prisma (`prisma/` e `src/infra/database/`), envio de e-mail (`src/infra/mail/`), filtro de erros e validação de entrada (`src/common/`) e a base de testes (`test/support/`). Dos módulos de domínio (`src/modules/`), existem o `users`, com a rota do Usuário autenticado, e o `auth`, com o cadastro, a verificação de e-mail, o reenvio, o login e o logout. O token de acesso e o guard que o exige ficam em `src/common/auth/`. A renovação da Sessão, a recuperação de senha e o limite de tentativas **ainda não existem**. A estrutura-alvo está na seção 1 do `docs/lld.md`, e o código novo deve nascer nela.
 
 ## Comandos
 
@@ -82,6 +82,7 @@ As suítes de integração e de ponta a ponta usam a base de `test/support/`. N�
 
 - **Banco de testes:** é um banco separado no mesmo PostgreSQL, com o nome do banco de `DATABASE_URL` mais o sufixo `_test`. Ele é criado e migrado sozinho no começo de cada execução da suíte, e todas as tabelas são esvaziadas antes de cada arquivo de teste. Por dividirem esse banco, os arquivos rodam um por vez.
 - **Aplicação:** um teste de ponta a ponta sobe a aplicação inteira com `createTestApp()`, que aplica a mesma configuração do `main.ts`, e fala com ela só por HTTP, com `supertest`. No fim, fecha com `app.close()`.
+- **Rotas da autenticação:** `authRoutes(app)`, de `test/support/auth-routes.ts`, traz as chamadas de cadastro, verificação, login, logout e `GET /me`, e os atalhos que deixam um Usuário cadastrado ou verificado.
 - **E-mail:** os testes leem o que foi enviado pela API HTTP do Mailpit, com `waitForMailTo()`. Cada teste usa um destinatário próprio, de `uniqueEmail()`, e acha os e-mails por ele. A caixa do Mailpit nunca é apagada, porque ela também serve ao desenvolvimento. Quando o teste provoca mais de um e-mail para o mesmo destinatário (reenvio, redefinição de senha), ele espera o seguinte com `waitForMailTo(endereço, { count: 2 })`. Sem o `count`, a espera termina no primeiro e-mail que já existir. Para provar que um envio **não** aconteceu, o teste provoca em seguida um envio que conhece, espera por ele e confere o total com `countMailTo()`.
 - **Prazos:** são testados reduzindo a variável de ambiente no teste, com `vi.stubEnv` antes de `createTestApp()`, sem relógio falso dentro dos services. O valor trocado passa pelo schema: se for inválido, a aplicação do teste não sobe. O Vitest desfaz a troca sozinho no fim de cada teste (`unstubEnvs`), sem `vi.unstubAllEnvs()` à mão.
 - **Configuração no teste:** um teste que precisa de um valor de configuração o pega da configuração injetada (`app.get(mailConfig.KEY)`), e não de `process.env`.
@@ -91,6 +92,8 @@ As suítes de integração e de ponta a ponta usam a base de `test/support/`. N�
 
 - **Prefixo:** o `/v1` é aplicado a todas as rotas por `configureApp()`, em `src/app.setup.ts`, que o `main.ts` e a base de testes chamam. Os controllers declaram a rota sem o prefixo.
 - **Configuração global:** o que vale para todas as rotas e não depende de injeção entra em `configureApp()`. O filtro de erros e a validação de entrada são registrados no `AppModule` (`APP_FILTER` e `APP_PIPE`), e não no `main.ts`, para valerem também nos testes.
+
+- **Rota protegida:** o controller leva `@UseGuards(AuthGuard)` e lê o id do Usuário com `@CurrentUserId()`, os dois de `src/common/auth/`. O módulo dele importa o `AccessTokensModule`. O guard só confere a assinatura do token, sem consultar o banco.
 
 ## Onde está cada assunto
 

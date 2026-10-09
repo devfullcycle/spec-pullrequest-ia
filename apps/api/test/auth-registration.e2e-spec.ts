@@ -2,9 +2,9 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { appConfig } from '../src/config/app.config.js';
+import { authRoutes, sleep, verificationToken } from './support/auth-routes.js';
 import { createTestApp } from './support/create-test-app.js';
 import {
-  CapturedMail,
   countMailTo,
   readAllMailTo,
   uniqueEmail,
@@ -12,56 +12,8 @@ import {
 } from './support/mailpit.js';
 import { expectProblem } from './support/problem.js';
 
-const PASSWORD = 'uma senha bem longa';
-
 const VERIFICATION_SUBJECT = 'Confirme seu e-mail';
 const ALREADY_REGISTERED_SUBJECT = 'Você já tem conta';
-
-/** O token do link de verificação que o e-mail traz. */
-function verificationToken(mail: CapturedMail): string {
-  const link = /https?:\/\/\S+\/verificar-email\?token=\S+/.exec(mail.text);
-  if (!link) {
-    throw new Error(`O e-mail "${mail.subject}" não traz link de verificação.`);
-  }
-  return new URL(link[0]).searchParams.get('token') ?? '';
-}
-
-/** As chamadas do cadastro e da verificação, contra uma aplicação de teste. */
-function authRoutes(app: INestApplication<App>) {
-  const post = (route: string, body: object) =>
-    request(app.getHttpServer()).post(`/v1/auth/${route}`).send(body);
-
-  const register = (email: string, password = PASSWORD) =>
-    post('register', { email, password });
-  const verifyEmail = (token: string) => post('verify-email', { token });
-  const resendVerification = (email: string) =>
-    post('resend-verification', { email });
-
-  /** Cadastra o e-mail e devolve o token do link de verificação que chegou. */
-  const registerAndGetToken = async (email: string) => {
-    await register(email).expect(201);
-    return verificationToken(await waitForMailTo(email));
-  };
-
-  return {
-    register,
-    verifyEmail,
-    resendVerification,
-    registerAndGetToken,
-    /** Deixa o e-mail com um Usuário já verificado. */
-    registerVerified: async (email: string) => {
-      await verifyEmail(await registerAndGetToken(email)).expect(204);
-    },
-    expectInvalidToken: async (token: string) => {
-      expectProblem(await verifyEmail(token).expect(400), {
-        title: 'Bad Request',
-        status: 400,
-        code: 'invalid_token',
-        detail: expect.any(String),
-      });
-    },
-  };
-}
 
 describe('Cadastro e verificação de e-mail', () => {
   let app: INestApplication<App>;
@@ -106,8 +58,17 @@ describe('Cadastro e verificação de e-mail', () => {
       await auth.verifyEmail(secondToken).expect(204);
     });
 
-    // A senha só é observável pelo login, que chega com o ticket de entrar e sair.
-    it.todo('faz a senha nova valer no lugar da anterior');
+    it('faz a senha nova valer no lugar da anterior', async () => {
+      const email = uniqueEmail();
+      await auth.register(email, 'a primeira senha longa').expect(201);
+      await waitForMailTo(email);
+      await auth.register(email, 'a segunda senha longa').expect(201);
+      const mail = await waitForMailTo(email, { count: 2 });
+      await auth.verifyEmail(verificationToken(mail)).expect(204);
+
+      await auth.login(email, 'a segunda senha longa').expect(200);
+      await auth.expectInvalidCredentials(email, 'a primeira senha longa');
+    });
   });
 
   describe('cadastro de um e-mail já cadastrado e verificado', () => {
@@ -125,8 +86,16 @@ describe('Cadastro e verificação de e-mail', () => {
       expect(mail.text).not.toContain('/verificar-email');
     });
 
-    // A senha só é observável pelo login, que chega com o ticket de entrar e sair.
-    it.todo('mantém a senha anterior');
+    it('mantém a senha anterior', async () => {
+      const email = uniqueEmail();
+      await auth.registerVerified(email);
+
+      await auth.register(email, 'outra senha bem longa').expect(201);
+      await waitForMailTo(email, { count: 2 });
+
+      await auth.login(email).expect(200);
+      await auth.expectInvalidCredentials(email, 'outra senha bem longa');
+    });
   });
 
   describe('e-mail do cadastro', () => {
@@ -294,7 +263,7 @@ describe('Cadastro e verificação de e-mail', () => {
       const shortLived = authRoutes(shortLivedApp);
       const token = await shortLived.registerAndGetToken(uniqueEmail());
 
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+      await sleep(1100);
 
       await shortLived.expectInvalidToken(token);
     });

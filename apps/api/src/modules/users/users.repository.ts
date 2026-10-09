@@ -44,6 +44,13 @@ export class UsersRepository {
     }
   }
 
+  findById(id: string): Promise<User | null> {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: USER_FIELDS,
+    });
+  }
+
   /** A coluna é `CITEXT`: a busca ignora maiúsculas. */
   findByEmail(email: string): Promise<User | null> {
     return this.prisma.user.findUnique({

@@ -1,5 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { secureCookies } from "@/lib/session/cookie-options";
 
 const COOKIE = "pending_verification_email";
 
@@ -16,8 +17,7 @@ const MAX_AGE_SECONDS = 60 * 60;
 export async function rememberPendingVerification(email: string): Promise<void> {
   (await cookies()).set(COOKIE, email, {
     httpOnly: true,
-    // Só o ambiente local, que usa HTTP, desliga o `Secure` (docs/lld.md, seção 6).
-    secure: process.env.COOKIE_SECURE !== "false",
+    secure: secureCookies(),
     sameSite: "lax",
     path: "/confira-seu-email",
     maxAge: MAX_AGE_SECONDS,

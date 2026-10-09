@@ -2,8 +2,11 @@ import "server-only";
 import { apiRequest } from "@/lib/api/client";
 import type {
   ApiResult,
+  LoginInput,
+  LogoutInput,
   RegisterInput,
   ResendVerificationInput,
+  TokenPair,
   VerifyEmailInput,
 } from "@/lib/api/types";
 
@@ -24,4 +27,12 @@ export function resendVerification(
     method: "POST",
     body: input,
   });
+}
+
+export function login(input: LoginInput): Promise<ApiResult<TokenPair>> {
+  return apiRequest("/auth/login", { method: "POST", body: input });
+}
+
+export function logout(input: LogoutInput): Promise<ApiResult<void>> {
+  return apiRequest("/auth/logout", { method: "POST", body: input });
 }

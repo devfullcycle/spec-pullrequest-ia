@@ -5,7 +5,10 @@ import { z } from "zod";
 import * as authApi from "@/lib/api/auth";
 import { errorMessage } from "@/lib/api/error-messages";
 import type { ApiError } from "@/lib/api/types";
+import { RETURN_PARAM, safeReturnPath } from "@/lib/session/return-path";
+import { saveSession } from "@/lib/session/tokens";
 import type {
+  LoginFormState,
   RegisterFormState,
   RequestLinkFormState,
   ResendFormState,
@@ -29,6 +32,12 @@ const registerSchema = z.object({
 });
 
 const resendSchema = z.object({ email });
+
+// Sem o mínimo do cadastro: uma senha curta é só uma senha errada.
+const loginSchema = z.object({
+  email,
+  password: z.string().min(1, "Informe sua senha."),
+});
 
 /** As mensagens da API são para quem desenvolve: a web escreve a própria, por campo. */
 const CHECK_YOUR_EMAIL_PATH = "/confira-seu-email";
@@ -73,6 +82,66 @@ export async function requestVerificationLink(
   }
   await rememberPendingVerification(parsed.data.email);
   redirect(CHECK_YOUR_EMAIL_PATH);
+}
+
+/**
+ * A tela de entrar. O botão do aviso de e-mail não verificado envia um formulário à parte para
+ * a mesma ação, com `intent=resend`, e pede o reenvio sem sair da tela. Uma ação só mantém um
+ * estado só, e a tela mostra sempre o aviso do último envio.
+ */
+export async function login(
+  previous: LoginFormState,
+  formData: FormData,
+): Promise<LoginFormState> {
+  if (formData.get("intent") === "resend") {
+    const state = await resendFromLogin(text(formData.get("unverifiedEmail")));
+    // O formulário do reenvio não traz o campo de e-mail: vale o do envio anterior.
+    return { ...state, email: previous.email };
+  }
+  // O e-mail digitado volta ao campo, seja qual for o resultado.
+  const email = text(formData.get("email"));
+  return { ...(await signIn(email, formData)), email };
+}
+
+async function signIn(
+  typedEmail: string,
+  formData: FormData,
+): Promise<LoginFormState> {
+  const parsed = loginSchema.safeParse({
+    email: typedEmail,
+    password: text(formData.get("password")),
+  });
+  if (!parsed.success) {
+    return { fieldErrors: firstMessages(parsed.error) };
+  }
+
+  const result = await authApi.login(parsed.data);
+  if (!result.ok) {
+    return result.error.code === "email_not_verified"
+      ? {
+          unverifiedEmail: parsed.data.email,
+          formError: errorMessage(result.error.code),
+        }
+      : apiFailure(result.error);
+  }
+  await saveSession(result.data);
+  redirect(safeReturnPath(text(formData.get(RETURN_PARAM))));
+}
+
+async function resendFromLogin(
+  unverifiedEmail: string,
+): Promise<LoginFormState> {
+  const parsed = resendSchema.safeParse({ email: unverifiedEmail });
+  if (!parsed.success) {
+    return { formError: errorMessage("validation_error") };
+  }
+  const result = await authApi.resendVerification(parsed.data);
+  return result.ok
+    ? { verificationSent: true }
+    : {
+        formError: errorMessage(result.error.code),
+        unverifiedEmail: parsed.data.email,
+      };
 }
 
 /**

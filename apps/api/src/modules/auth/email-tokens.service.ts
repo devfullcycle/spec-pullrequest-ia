@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
 import { EmailTokenType } from './email-token-type.js';
 import { EmailTokensRepository } from './email-tokens.repository.js';
+import { generateOpaqueToken, hashOpaqueToken } from './opaque-token.js';
 
 /**
  * Tokens de uso único enviados por e-mail. O banco só guarda o hash: o valor
@@ -21,12 +21,12 @@ export class EmailTokensService {
     type: EmailTokenType,
     ttlSeconds: number,
   ): Promise<string> {
-    const token = randomBytes(32).toString('base64url');
+    const token = generateOpaqueToken();
     await this.tokens.replace({
       id: uuidv7(),
       userId,
       type,
-      tokenHash: hash(token),
+      tokenHash: hashOpaqueToken(token),
       expiresAt: new Date(Date.now() + ttlSeconds * 1000),
     });
     return token;
@@ -37,7 +37,7 @@ export class EmailTokensService {
    * existe, expirou ou já foi usado.
    */
   use(token: string, type: EmailTokenType): Promise<string | null> {
-    return this.tokens.use(hash(token), type, new Date());
+    return this.tokens.use(hashOpaqueToken(token), type, new Date());
   }
 
   /**
@@ -45,10 +45,6 @@ export class EmailTokensService {
    * concluído, para a pessoa poder abrir o mesmo link de novo.
    */
   release(token: string, type: EmailTokenType): Promise<void> {
-    return this.tokens.release(hash(token), type);
+    return this.tokens.release(hashOpaqueToken(token), type);
   }
-}
-
-function hash(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
 }

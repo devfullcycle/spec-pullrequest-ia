@@ -21,7 +21,8 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  emailTokens EmailToken[]
+  emailTokens   EmailToken[]
+  refreshTokens RefreshToken[]
 
   @@map("users")
 }
@@ -40,4 +41,23 @@ model EmailToken {
   /// Um token por Usuário e tipo: emitir outro substitui o anterior.
   @@unique([userId, type])
   @@map("email_tokens")
+}
+
+model RefreshToken {
+  id           String    @id @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  /// Agrupa a cadeia de tokens de uma mesma Sessão. Gerado no login.
+  sessionId    String    @map("session_id") @db.Uuid
+  /// SHA-256 do token.
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz
+  rotatedAt    DateTime? @map("rotated_at") @db.Timestamptz
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([userId])
+  @@map("refresh_tokens")
 }

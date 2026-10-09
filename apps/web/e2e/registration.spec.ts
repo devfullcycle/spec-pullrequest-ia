@@ -1,25 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
-import { extractLink, uniqueEmail, waitForMailTo } from "./support/mailpit";
-
-const PASSWORD = "uma senha bem longa";
-
-/** Preenche e envia o formulário de cadastro. */
-async function signUp(page: Page, email: string) {
-  await page.goto("/criar-conta");
-  await page.getByLabel("E-mail").fill(email);
-  await page.getByLabel("Senha", { exact: true }).fill(PASSWORD);
-  await page.getByRole("button", { name: "Criar conta" }).click();
-}
-
-/** Abre o link de verificação do e-mail mais novo, depois de o endereço ter recebido `count`. */
-async function openVerificationLink(page: Page, email: string, count = 1) {
-  const link = extractLink(
-    await waitForMailTo(email, { count }),
-    "/verificar-email",
-  );
-  await page.goto(link.pathname + link.search);
-  return link;
-}
+import { expect, test } from "@playwright/test";
+import { openVerificationLink, signUp } from "./support/account";
+import { uniqueEmail, waitForMailTo } from "./support/mailpit";
 
 test("o visitante se cadastra, verifica o e-mail pelo link e chega à tela de entrar", async ({
   page,
@@ -28,9 +9,6 @@ test("o visitante se cadastra, verifica o e-mail pelo link e chega à tela de en
 
   await signUp(page, email);
 
-  await expect(
-    page.getByRole("heading", { name: "Confira seu e-mail" }),
-  ).toBeVisible();
   await expect(page.getByText(email)).toBeVisible();
   // O endereço não vai para a URL, que fica no histórico e nos logs.
   await expect(page).toHaveURL(/\/confira-seu-email$/);
