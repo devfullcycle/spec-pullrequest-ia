@@ -516,6 +516,7 @@ O cadastro nunca revela se um e-mail já tem usuário. A resposta é sempre 201,
 **Redefinição de senha**
 
 - O pedido responde 204 exista ou não o usuário, e só envia o e-mail no primeiro caso. Pedir outro link invalida o anterior.
+- A API responde ao pedido logo depois de buscar o usuário, que custa o mesmo nos dois casos. A gravação do token e o envio do e-mail seguem sem espera, para o tempo de resposta não revelar se o e-mail tem usuário. Uma falha na gravação só é registrada em log, como a de envio.
 - Funciona também para usuário não verificado.
 - Concluir a redefinição marca o e-mail como verificado, porque a pessoa provou que controla a caixa.
 - Encerra todas as Sessões, não abre uma nova e envia o e-mail "sua senha foi alterada". As Sessões são encerradas antes de a senha mudar: se a troca falha, a pessoa só precisa entrar de novo, e nunca fica com a senha nova e as Sessões antigas abertas. O token de acesso já emitido continua valendo até expirar, porque a API o valida só pela assinatura.

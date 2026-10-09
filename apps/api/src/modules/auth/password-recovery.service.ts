@@ -1,6 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { authConfig } from '../../config/auth.config.js';
+import { User } from '../users/entities/user.entity.js';
 import { UsersService } from '../users/users.service.js';
 import { AuthMailerService } from './auth-mailer.service.js';
 import { EmailTokensService } from './email-tokens.service.js';
@@ -11,6 +12,8 @@ import { SessionsService } from './sessions.service.js';
 /** Recuperação de senha (seção 4.7 do docs/lld.md). */
 @Injectable()
 export class PasswordRecoveryService {
+  private readonly logger = new Logger(PasswordRecoveryService.name);
+
   constructor(
     private readonly users: UsersService,
     private readonly passwords: PasswordService,
@@ -23,13 +26,25 @@ export class PasswordRecoveryService {
 
   /**
    * Envia o link de redefinição ao dono do e-mail. Vale também para o Usuário
-   * não verificado. Responde igual para um e-mail sem Usuário.
+   * não verificado. A resposta sai logo depois da busca do Usuário, que custa
+   * o mesmo exista ele ou não: o token e o e-mail seguem sem espera, para o
+   * tempo de resposta não revelar se o e-mail tem Usuário. Uma falha ali só
+   * vai para o log, e a pessoa pede outro link.
    */
   async requestReset(email: string): Promise<void> {
     const user = await this.users.findByEmail(email);
     if (!user) {
       return;
     }
+    this.sendResetLink(user).catch((error: unknown) => {
+      this.logger.error(
+        'Falha ao emitir o link de redefinição de senha.',
+        error instanceof Error ? error.stack : String(error),
+      );
+    });
+  }
+
+  private async sendResetLink(user: User): Promise<void> {
     const ttlSeconds = this.config.passwordResetTtlSeconds;
     const token = await this.emailTokens.issue(
       user.id,
