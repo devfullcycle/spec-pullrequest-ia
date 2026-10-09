@@ -1,0 +1,71 @@
+import { INestApplication } from '@nestjs/common';
+import { App } from 'supertest/types.js';
+import { appConfig } from '../src/config/app.config.js';
+import { PrismaService } from '../src/infra/database/prisma.service.js';
+import { createTestApp } from './support/create-test-app.js';
+import { cleanDatabase, createTestDatabaseClient } from './support/database.js';
+
+// Confere a própria base de testes. É o único teste que olha o banco por dentro:
+// os testes das funcionalidades só observam o que sai pelas rotas.
+describe('Base de testes', () => {
+  let app: INestApplication<App>;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('sobe a aplicação inteira ligada ao banco de testes, e não ao de desenvolvimento', async () => {
+    const [{ name }] = await app.get(PrismaService).$queryRaw<
+      { name: string }[]
+    >`SELECT current_database() AS name`;
+
+    expect(name).toMatch(/_test$/);
+  });
+
+  it('entrega à aplicação a variável de ambiente que o teste trocou antes de subi-la', async () => {
+    vi.stubEnv('PORT', '4999');
+    const appWithOverride = await createTestApp();
+    try {
+      expect(appWithOverride.get(appConfig.KEY).port).toBe(4999);
+    } finally {
+      await appWithOverride.close();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('aplica no banco de testes as mesmas migrações do banco de desenvolvimento', async () => {
+    const extensions = await app.get(PrismaService).$queryRaw<
+      { extname: string }[]
+    >`SELECT extname FROM pg_extension`;
+
+    expect(extensions.map(({ extname }) => extname)).toEqual(
+      expect.arrayContaining(['citext', 'pg_trgm']),
+    );
+  });
+
+  it('esvazia as tabelas na limpeza, mas preserva o histórico de migrações', async () => {
+    const database = createTestDatabaseClient();
+    try {
+      await database.$executeRaw`CREATE TABLE test_base_probe (id INT PRIMARY KEY)`;
+      await database.$executeRaw`INSERT INTO test_base_probe (id) VALUES (1), (2)`;
+
+      await cleanDatabase();
+
+      const [{ rows }] = await database.$queryRaw<
+        { rows: number }[]
+      >`SELECT count(*)::int AS rows FROM test_base_probe`;
+      const [{ migrations }] = await database.$queryRaw<
+        { migrations: number }[]
+      >`SELECT count(*)::int AS migrations FROM _prisma_migrations`;
+      expect(rows).toBe(0);
+      expect(migrations).toBeGreaterThan(0);
+    } finally {
+      await database.$executeRaw`DROP TABLE IF EXISTS test_base_probe`;
+      await database.$disconnect();
+    }
+  });
+});
