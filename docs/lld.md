@@ -585,7 +585,7 @@ A retenção da lixeira, o prazo de upload pendente e a validade dos tokens são
 | `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | api | Padrões de 15 minutos e 30 dias |
 | `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | api | Credenciais do gateway (segredo) |
 | `SMTP_URL`, `MAIL_FROM` | api | Servidor SMTP do serviço de e-mail (segredo) e remetente. No desenvolvimento, aponta para o `mailpit`. |
-| `SMTP_TIMEOUT_MS` | api | Quanto esperar o servidor SMTP para conectar, saudar e responder, em milissegundos. Padrão de 10000. |
+| `SMTP_TIMEOUT_MS` | api | Quanto esperar o servidor SMTP para resolver o nome, conectar, saudar e responder, em milissegundos. Padrão de 10000. |
 | `WEB_ORIGIN` | api | Origem do frontend, para CORS e links de e-mail |
 | `INTERNAL_API_SECRET` | api e web | Segredo que autoriza a web a repassar o IP do usuário (segredo) |
 | `API_URL` | web | Endereço interno da API |

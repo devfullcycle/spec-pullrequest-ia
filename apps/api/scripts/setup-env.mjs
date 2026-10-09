@@ -18,7 +18,17 @@ if (!existsSync(envPath)) {
 
 const current = parseEnv(readFileSync(envPath, 'utf8'));
 
-if (!current.JWT_PRIVATE_KEY || !current.JWT_PUBLIC_KEY) {
+const jwtKeys = [current.JWT_PRIVATE_KEY, current.JWT_PUBLIC_KEY].filter(Boolean);
+
+if (jwtKeys.length === 1) {
+  // Gerar um par novo trocaria, sem aviso, a chave que a pessoa pôs no arquivo.
+  console.error(
+    'setup-env: o .env tem só uma das chaves do JWT. Defina JWT_PRIVATE_KEY e JWT_PUBLIC_KEY, ou apague as duas para o par ser gerado.',
+  );
+  process.exit(1);
+}
+
+if (jwtKeys.length === 0) {
   const { privateKey, publicKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },

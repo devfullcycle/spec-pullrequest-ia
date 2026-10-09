@@ -21,9 +21,10 @@ export class PrismaService
     super({ adapter: new PrismaPg({ connectionString: config.url }) });
   }
 
-  // Conecta na subida para a aplicação falhar cedo se o banco estiver fora.
+  // Consulta o banco na subida para a aplicação falhar cedo se ele estiver
+  // fora. Só o `$connect()` não basta: com o adapter, ele não abre conexão.
   async onModuleInit(): Promise<void> {
-    await this.$connect();
+    await this.$queryRaw`SELECT 1`;
   }
 
   async onModuleDestroy(): Promise<void> {

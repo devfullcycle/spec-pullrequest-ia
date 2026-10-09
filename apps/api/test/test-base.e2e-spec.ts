@@ -41,6 +41,13 @@ describe('Base de testes', () => {
     await expect(createTestApp()).rejects.toThrow(/"PORT" must be a number/);
   });
 
+  it('não sobe a aplicação quando o banco não aceita conexões', async () => {
+    // A porta 1 do serviço do banco não tem ninguém ouvindo.
+    vi.stubEnv('DATABASE_URL', 'postgresql://app:app@postgres:1/app_test');
+
+    await expect(createTestApp()).rejects.toThrow();
+  });
+
   it('aplica no banco de testes as mesmas migrações do banco de desenvolvimento', async () => {
     const extensions = await app.get(PrismaService).$queryRaw<
       { extname: string }[]
