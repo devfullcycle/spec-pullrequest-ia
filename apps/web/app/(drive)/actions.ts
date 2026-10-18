@@ -6,6 +6,7 @@ import { toFileRow } from "@/components/files/format";
 import type { LoadMoreResult } from "@/components/files/load-more";
 import * as authApi from "@/lib/api/auth";
 import { errorMessage } from "@/lib/api/error-messages";
+import type { ApiResult } from "@/lib/api/types";
 import { completeFailureReason } from "@/lib/uploads/complete-failure";
 import type {
   CancelUploadResult,
@@ -94,25 +95,24 @@ const INVALID_NAME =
   "O nome não pode ter “/” nem caracteres de controle, nem ser “.” ou “..”.";
 
 /**
- * Cria uma pasta dentro de `parentId`. É uma Server Action, um endpoint público: o nome é
- * conferido aqui, e a Sessão, pela própria chamada à API.
+ * O trecho comum de "Nova pasta" e "Renomear": confere o nome e o id aqui, chama a API e traduz o
+ * erro dela em português.
  */
-export async function createFolder(
-  parentId: string,
+async function runNameAction(
+  id: string,
   name: string,
+  emptyMessage: string,
+  call: (id: string, name: string) => Promise<ApiResult<{ name: string }>>,
 ): Promise<CreateFolderResult> {
-  const parsedName = itemNameSchema("Informe um nome para a pasta.").safeParse(name);
-  const parsedParent = itemIdSchema.safeParse(parentId);
+  const parsedName = itemNameSchema(emptyMessage).safeParse(name);
+  const parsedId = itemIdSchema.safeParse(id);
   if (!parsedName.success) {
     return { ok: false, message: parsedName.error.issues[0].message };
   }
-  if (!parsedParent.success) {
+  if (!parsedId.success) {
     return { ok: false, message: errorMessage("validation_error") };
   }
-  const result = await makeFolder({
-    name: parsedName.data,
-    parentId: parsedParent.data,
-  });
+  const result = await call(parsedId.data, parsedName.data);
   if (!result.ok) {
     const message =
       result.error.code === "validation_error"
@@ -123,10 +123,21 @@ export async function createFolder(
   return { ok: true, name: result.data.name };
 }
 
-/** O que o "Renomear" devolve ao diálogo: o nome novo, como a API o gravou, ou o erro, em português. */
-export type RenameItemResult =
-  | { ok: true; name: string }
-  | { ok: false; message: string };
+/**
+ * Cria uma pasta dentro de `parentId`. É uma Server Action, um endpoint público: o nome é
+ * conferido aqui, e a Sessão, pela própria chamada à API.
+ */
+export async function createFolder(
+  parentId: string,
+  name: string,
+): Promise<CreateFolderResult> {
+  return runNameAction(parentId, name, "Informe um nome para a pasta.", (id, n) =>
+    makeFolder({ name: n, parentId: id }),
+  );
+}
+
+/** O que o "Renomear" devolve ao diálogo: o mesmo formato do "Nova pasta". */
+export type RenameItemResult = CreateFolderResult;
 
 /**
  * Renomeia um Item (pasta ou arquivo). É uma Server Action, um endpoint público: o nome é
@@ -136,23 +147,9 @@ export async function renameItem(
   id: string,
   name: string,
 ): Promise<RenameItemResult> {
-  const parsedName = itemNameSchema("Informe um nome.").safeParse(name);
-  const parsedId = itemIdSchema.safeParse(id);
-  if (!parsedName.success) {
-    return { ok: false, message: parsedName.error.issues[0].message };
-  }
-  if (!parsedId.success) {
-    return { ok: false, message: errorMessage("validation_error") };
-  }
-  const result = await changeName(parsedId.data, { name: parsedName.data });
-  if (!result.ok) {
-    const message =
-      result.error.code === "validation_error"
-        ? INVALID_NAME
-        : errorMessage(result.error.code);
-    return { ok: false, message };
-  }
-  return { ok: true, name: result.data.name };
+  return runNameAction(id, name, "Informe um nome.", (itemId, n) =>
+    changeName(itemId, { name: n }),
+  );
 }
 
 /** A Server Action é um endpoint público: o que vem do navegador é conferido antes de ir à API. */

@@ -196,21 +196,18 @@ export class ItemsRepository {
     id: string,
     name: string,
   ): Promise<RenameResult> {
-    const { count } = await this.prisma.item.updateMany({
+    const [row] = await this.prisma.item.updateManyAndReturn({
       where: { id, ownerId, status: 'active', parentId: { not: null } },
       data: { name },
+      select: ITEM_FIELDS,
     });
-    if (count === 0) {
+    if (!row) {
       const root = await this.prisma.item.findFirst({
         where: { id, ownerId, status: 'active', parentId: null },
         select: { id: true },
       });
       return { status: root ? 'root' : 'not_found' };
     }
-    const row = await this.prisma.item.findUniqueOrThrow({
-      where: { id },
-      select: ITEM_FIELDS,
-    });
     return { status: 'renamed', item: toItem(row) };
   }
 
